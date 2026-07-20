@@ -1,0 +1,83 @@
+# Mainly.C
+
+Mainly.C 是一个面向 C 初学者的轻量级浏览器编辑器。它使用 Clang 22 将当前 C 文件编译为 WebAssembly，并通过 Wasmer 在浏览器本地交互运行；源代码、标准输入输出和编译过程不经过远程编译服务器。
+
+在线版本：[https://minsecrus.github.io/Mainly.C/](https://minsecrus.github.io/Mainly.C/)
+
+## 功能
+
+- 单文件 C 工作区与本地浏览器持久化
+- Monaco Editor C 语法高亮
+- C23 关键字、预处理指令、标准头文件和常用标准库函数补全
+- `Ctrl+S` 使用本地 Clang-format 22 自动格式化并保存
+- UI 优先显示，随后在后台并行准备 Clang-format 与 Clang 22 工具链
+- Clang 22 编译诊断与 Monaco 行列映射
+- 类 Error Lens 的行内错误提示
+- 基于 xterm.js 的交互式终端
+- `Ctrl+C` 或运行按钮强制终止程序
+- 单次运行，或每 5、10、30 秒循环编译运行
+- 完全本地的编译、链接和 WebAssembly 执行
+
+## 技术栈
+
+- TypeScript、React、Vite、Tailwind CSS
+- Monaco Editor、Radix UI、xterm.js
+- `@wasm-fmt/clang-format` 22.1.8
+- `@wasmer/sdk` 0.8.0
+- 自制 Clang / LLD 22.1.0 WebC 工具链
+- C23、`wasm32-wasip1` 与浏览器兼容 WASIX sysroot
+
+## 架构
+
+```text
+UI
+ |
+UDE API
+ |
+Compiler Adapter
+ |
+Clang / LLD 22 WebC
+ |
+WebAssembly Runtime
+```
+
+编译器适配器先通过 `clang -###` 获取命令计划，再分别运行 Clang 前端和 LLD。交互程序在独立 Worker 内执行，因此终止操作可以立即销毁整个运行实例。
+
+## 本地开发
+
+要求：Node.js 22、PowerShell 7 和 Wasmer CLI 7.2.0。
+
+```powershell
+npm install
+npm run clang:build
+npm run dev
+```
+
+如果 Wasmer CLI 不在项目默认的 `.tools/wasmer/v7.2.0/bin/wasmer.exe` 位置，可直接向构建脚本传入路径：
+
+```powershell
+pwsh -NoProfile -File toolchain/clang-22/scripts/build-package.ps1 -WasmerPath "C:\path\to\wasmer.exe"
+```
+
+生产构建：
+
+```powershell
+npm run build
+```
+
+## GitHub Pages
+
+推送到 `main` 后，[部署工作流](.github/workflows/deploy-pages.yml)会重建 Clang WebC、以 `/Mainly.C/` 为 Vite 基路径构建站点，并部署到 GitHub Pages。
+
+GitHub Pages 无法直接配置运行 WebAssembly 线程所需的 COOP/COEP 响应头，因此站点随包部署 `coi-serviceworker`。首次访问时页面可能自动刷新一次，以建立跨源隔离环境。
+
+## 当前边界
+
+- 每次只编译当前打开的一个 `.c` 文件。
+- 程序运行在浏览器 WASI/WASIX 沙箱中，不等同于本机原生进程。
+- 网络、子进程和本机文件系统等能力受到浏览器与运行时限制。
+- 首次打开时会在编辑器显示后加载约 124 MB 的本地工具链，准备完成前不能运行。
+
+## License
+
+Copyright © 2026 Minsecrus. Mainly.C 以 [MIT License](LICENSE) 发布。Clang、LLVM、WASI/WASIX、字体及其他第三方组件遵循各自的许可证。

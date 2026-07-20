@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <link rel="icon" href="/favicon.ico?v=1" type="image/x-icon" sizes="any" />
+    <meta
+      name="description"
+      content="Mainly.C — 在浏览器本地编译和运行 C23 程序"
+    />
+    <title>Mainly.C</title>
+    <script>
+      window.coi = { quiet: true };
+      const coiScript = document.createElement("script");
+      coiScript.src = new URL("coi-serviceworker.js", document.baseURI).href;
+      coiScript.async = false;
+      document.head.append(coiScript);
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

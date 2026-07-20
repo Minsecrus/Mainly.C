@@ -1,0 +1,47 @@
+{
+  "name": "mainly.c",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "clang:prepare": "pwsh -NoProfile -File toolchain/clang-22/scripts/prepare-package.ps1",
+    "clang:build": "pwsh -NoProfile -File toolchain/clang-22/scripts/build-package.ps1",
+    "typecheck": "tsc --noEmit",
+    "test:clang:native": "pwsh -NoProfile -File toolchain/clang-22/scripts/verify-package.ps1",
+    "test:clang:browser": "node toolchain/clang-22/tests/browser-smoke.mjs",
+    "test:clang": "npm run test:clang:native && npm run test:clang:browser",
+    "test:ui": "npm run build && node toolchain/clang-22/tests/ui-smoke.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/mona-sans": "^5.2.8",
+    "@fontsource/monaspace-neon": "^5.2.5",
+    "@lobehub/webfont-harmony-sans-sc": "^1.0.0",
+    "@monaco-editor/react": "4.7.0",
+    "@wasm-fmt/clang-format": "^22.1.8",
+    "@wasmer/sdk": "0.8.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "clsx": "2.1.1",
+    "coi-serviceworker": "^0.1.7",
+    "lucide-react": "1.25.0",
+    "monaco-editor": "0.53.0",
+    "radix-ui": "1.6.4",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "playwright-core": "1.61.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.1.5"
+  }
+}

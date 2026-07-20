@@ -1,0 +1,33 @@
+{
+  "package": {
+    "name": "mainly-c/clang-22",
+    "version": "22.1.0-1"
+  },
+  "compiler": {
+    "name": "Clang",
+    "version": "22.1.0",
+    "source": "https://codeberg.org/YoWASP/llvm-project",
+    "commit": "9560ae0f2cc440e4fc891fddbc119da6f56daa59",
+    "target": "wasm32-unknown-wasip1"
+  },
+  "buildRecipe": {
+    "source": "https://codeberg.org/YoWASP/clang",
+    "commit": "409b7dfdbd5ed12545eed706808fd423f1f692c6",
+    "wasiSdkVersion": "29.0",
+    "wasiLibcCommit": "2fc32bc81b9f07f8d9525edea59bfbaf760c06d6"
+  },
+  "interactiveSysroot": {
+    "source": "https://wasmer.io/clang/clang@0.160000.1",
+    "package": "clang/clang",
+    "version": "0.160000.1",
+    "contents": "WASIX sysroot and compiler-rt builtins only",
+    "webcSha256": "c127b7bfc0041d02c94045f40be7fb4b3eeb98cede25fad96261b7b90a82f405"
+  },
+  "bootstrapArtifact": {
+    "name": "@yowasp/clang",
+    "version": "22.0.0-git20542-10",
+    "url": "https://registry.npmjs.org/@yowasp/clang/-/clang-22.0.0-git20542-10.tgz",
+    "sha256": "6230ea1afa9691fa065935cf68c01642ff9b31c183fe8ac64cdfda025df06009",
+    "npmSha1": "99e06cff031c57bc040b68ce0dbf41d239cde14c"
+  }
+}

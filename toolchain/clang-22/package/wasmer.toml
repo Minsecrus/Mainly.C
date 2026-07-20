@@ -1,0 +1,68 @@
+[package]
+name = "mainly-c/clang-22"
+version = "22.1.0-1"
+description = "Clang/LLD 22.1.0 and a complete WASI sysroot for mainly.c"
+license = "Apache-2.0 WITH LLVM-exception"
+license-file = "LICENSE-LLVM.txt"
+readme = "README.md"
+entrypoint = "clang"
+
+[fs]
+"/usr" = "sysroot"
+"/wasix" = "wasix-compat-sysroot"
+
+[[module]]
+name = "llvm-22"
+source = "bin/llvm.wasm"
+
+[[command]]
+name = "clang"
+module = "llvm-22"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+exec-name = "clang"
+env = ["TMPDIR=/workspace"]
+
+[[command]]
+name = "clang++"
+module = "llvm-22"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+exec-name = "clang++"
+env = ["TMPDIR=/workspace"]
+
+[[command]]
+name = "wasm-ld"
+module = "llvm-22"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+exec-name = "wasm-ld"
+main-args = ["--threads=1"]
+env = ["TMPDIR=/workspace"]
+
+[[command]]
+name = "llvm-ar"
+module = "llvm-22"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+exec-name = "ar"
+
+[[command]]
+name = "llvm-ranlib"
+module = "llvm-22"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+exec-name = "ranlib"
+
+[[command]]
+name = "llvm-nm"
+module = "llvm-22"
+runner = "https://webc.org/runner/wasi"
+
+[command.annotations.wasi]
+exec-name = "nm"

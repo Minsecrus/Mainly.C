@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+.cache/
+.tools/
+dist/
+web-dist/
+coverage/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Generated Clang package contents
+toolchain/clang-22/package/bin/
+toolchain/clang-22/package/sysroot/
+toolchain/clang-22/package/wasix-compat-sysroot/
+toolchain/clang-22/package/LICENSE-LLVM.txt
+toolchain/clang-22/package/LICENSE-WASI-LIBC.txt
+toolchain/clang-22/package/LICENSE-WASIX-LIBC.txt
+toolchain/clang-22/package/LICENSE-YOWASP.txt
