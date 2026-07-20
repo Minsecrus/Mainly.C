@@ -18,6 +18,10 @@ export interface LoadCompilerOptions {
 let sdkInitialization: Promise<unknown> | undefined;
 let compilerInitialization: Promise<ClangCompilerAdapter> | undefined;
 
+const TOOLCHAIN_FILE_NAME = "mainly-c-clang-22.1.0-1.webc";
+const TOOLCHAIN_CACHE_PREFIX = "mainly-c-toolchain-";
+const TOOLCHAIN_CACHE_NAME = `${TOOLCHAIN_CACHE_PREFIX}clang-22.1.0-1`;
+
 function localAssetUrl(path: string): URL {
   const base = import.meta.env.BASE_URL.endsWith("/")
     ? import.meta.env.BASE_URL
@@ -36,31 +40,149 @@ async function initializeSdk(): Promise<void> {
   await sdkInitialization;
 }
 
+async function openToolchainCache(log?: CompilerLogSink): Promise<Cache | undefined> {
+  if (!("caches" in window)) return undefined;
+
+  try {
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames
+        .filter((name) => name.startsWith(TOOLCHAIN_CACHE_PREFIX) && name !== TOOLCHAIN_CACHE_NAME)
+        .map((name) => caches.delete(name)),
+    );
+    return await caches.open(TOOLCHAIN_CACHE_NAME);
+  } catch (cause) {
+    log?.({
+      source: "compiler",
+      event: "toolchain:cache-error",
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+    return undefined;
+  }
+}
+
+async function requestPersistentStorage(log?: CompilerLogSink): Promise<void> {
+  try {
+    const storage = navigator.storage;
+    if (!storage?.persist) return;
+    const persistent = (await storage.persisted?.()) || (await storage.persist());
+    log?.({ source: "compiler", event: "toolchain:storage", persistent });
+  } catch (cause) {
+    log?.({
+      source: "compiler",
+      event: "toolchain:storage-error",
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+}
+
+function cacheableResponse(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.delete("cache-control");
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+  headers.delete("expires");
+  headers.delete("vary");
+  return new Response(response.clone().body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function deleteCachedToolchain(log?: CompilerLogSink): Promise<void> {
+  if (!("caches" in window)) return;
+  try {
+    const cache = await caches.open(TOOLCHAIN_CACHE_NAME);
+    await cache.delete(localAssetUrl(`toolchain/${TOOLCHAIN_FILE_NAME}`));
+  } catch (cause) {
+    log?.({
+      source: "compiler",
+      event: "toolchain:cache-delete-error",
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+}
+
 async function downloadToolchain(
   onProgress?: (progress: ToolchainLoadProgress) => void,
+  log?: CompilerLogSink,
 ): Promise<Uint8Array> {
-  const response = await fetch(localAssetUrl("toolchain/mainly-c-clang-22.1.0-1.webc"));
+  const toolchainUrl = localAssetUrl(`toolchain/${TOOLCHAIN_FILE_NAME}`);
+  const cache = await openToolchainCache(log);
+  let response: Response | undefined;
+  if (cache) {
+    try {
+      response = await cache.match(toolchainUrl);
+    } catch (cause) {
+      log?.({
+        source: "compiler",
+        event: "toolchain:cache-error",
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+  let cacheWrite: Promise<void> | undefined;
+
+  if (response?.ok) {
+    log?.({ source: "compiler", event: "toolchain:cache-hit" });
+  } else {
+    log?.({ source: "compiler", event: "toolchain:download" });
+    response = await fetch(toolchainUrl);
+    if (response.ok && cache) {
+      cacheWrite = cache
+        .put(toolchainUrl, cacheableResponse(response))
+        .then(() => {
+          log?.({ source: "compiler", event: "toolchain:cache-write" });
+          void requestPersistentStorage(log);
+        })
+        .catch((cause) => {
+          log?.({
+            source: "compiler",
+            event: "toolchain:cache-error",
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
+        });
+    }
+  }
+
   if (!response.ok) {
     throw new Error(`无法载入本地 Clang 工具链（HTTP ${response.status}）`);
   }
 
   const totalHeader = response.headers.get("content-length");
-  const totalBytes = totalHeader ? Number.parseInt(totalHeader, 10) : undefined;
+  const parsedTotalBytes = totalHeader ? Number.parseInt(totalHeader, 10) : undefined;
+  let totalBytes =
+    response.headers.has("content-encoding") ||
+    parsedTotalBytes === undefined ||
+    !Number.isFinite(parsedTotalBytes) ||
+    parsedTotalBytes <= 0
+      ? undefined
+      : parsedTotalBytes;
   if (!response.body) {
     const bytes = new Uint8Array(await response.arrayBuffer());
+    await cacheWrite;
     onProgress?.({ loadedBytes: bytes.byteLength, totalBytes, percent: 100 });
     return bytes;
   }
 
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
-  const preallocated = totalBytes ? new Uint8Array(totalBytes) : undefined;
+  let preallocated = totalBytes ? new Uint8Array(totalBytes) : undefined;
   let loadedBytes = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (preallocated) preallocated.set(value, loadedBytes);
-    else chunks.push(value);
+    if (preallocated && loadedBytes + value.byteLength <= preallocated.byteLength) {
+      preallocated.set(value, loadedBytes);
+    } else {
+      if (preallocated) {
+        chunks.push(preallocated.subarray(0, loadedBytes));
+        preallocated = undefined;
+        totalBytes = undefined;
+      }
+      chunks.push(value);
+    }
     loadedBytes += value.byteLength;
     onProgress?.({
       loadedBytes,
@@ -70,6 +192,7 @@ async function downloadToolchain(
   }
 
   if (preallocated) {
+    await cacheWrite;
     return loadedBytes === preallocated.byteLength
       ? preallocated
       : preallocated.slice(0, loadedBytes);
@@ -81,6 +204,7 @@ async function downloadToolchain(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  await cacheWrite;
   return bytes;
 }
 
@@ -88,8 +212,7 @@ export function loadCompiler(options: LoadCompilerOptions = {}): Promise<ClangCo
   compilerInitialization ??= (async () => {
     options.log?.({ source: "compiler", event: "sdk:initialize" });
     await initializeSdk();
-    options.log?.({ source: "compiler", event: "toolchain:download" });
-    const webc = await downloadToolchain(options.onProgress);
+    const webc = await downloadToolchain(options.onProgress, options.log);
     const runtime = new Runtime({ registry: null });
     return ClangCompilerAdapter.fromWebc(webc, {
       runtime,
@@ -98,6 +221,7 @@ export function loadCompiler(options: LoadCompilerOptions = {}): Promise<ClangCo
     });
   })().catch((error) => {
     compilerInitialization = undefined;
+    void deleteCachedToolchain(options.log);
     throw error;
   });
   return compilerInitialization;

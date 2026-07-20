@@ -3,6 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import zlib from "node:zlib";
 
 import { chromium } from "playwright-core";
 
@@ -45,6 +46,7 @@ async function run() {
     throw new Error("Production UI is missing. Run npm run build first.");
   }
   const requestedPaths = [];
+  let compressedToolchain;
   const server = http.createServer((request, response) => {
     response.setHeader("Cache-Control", "no-store");
     const pathname = new URL(request.url || "/", "http://localhost").pathname;
@@ -68,6 +70,18 @@ async function run() {
       return;
     }
     const stat = fs.statSync(filePath);
+    if (filePath.endsWith(".webc")) {
+      compressedToolchain ??= zlib.gzipSync(fs.readFileSync(filePath), { level: 1 });
+      response.writeHead(200, {
+        "Content-Type": contentType(filePath),
+        "Content-Encoding": "gzip",
+        "Content-Length": compressedToolchain.byteLength,
+        "Cache-Control": "no-store",
+        Vary: "Accept-Encoding",
+      });
+      response.end(compressedToolchain);
+      return;
+    }
     response.writeHead(200, {
       "Content-Type": contentType(filePath),
       "Content-Length": stat.size,
@@ -152,7 +166,7 @@ async function run() {
     if (!requestedPaths.some((pathname) => /clang-format.*\.wasm/.test(pathname))) {
       throw new Error("Clang-format was not loaded with the compiler");
     }
-    console.log("[ui-smoke] editor, formatter, and compiler are ready");
+    console.log("[ui-smoke] editor, formatter, and gzip-delivered compiler are ready");
 
     await page.getByRole("button", { name: "选择执行方式" }).click();
     await page.getByRole("menuitemradio", { name: /单次运行/ }).waitFor({ state: "visible" });
@@ -273,6 +287,19 @@ async function run() {
       { timeout: 10_000 },
     );
     await page.locator("section svg.lucide-x").waitFor({ state: "visible", timeout: 5_000 });
+
+    const toolchainRequestCount = requestedPaths.filter((pathname) => /toolchain\/.+\.webc/.test(pathname)).length;
+    if (toolchainRequestCount !== 1) {
+      throw new Error(`Expected one initial Clang WebC request, received ${toolchainRequestCount}`);
+    }
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 20_000 });
+    await page.locator(".monaco-editor").waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator("[data-terminal-notice]").waitFor({ state: "hidden", timeout: 25_000 });
+    const requestsAfterReload = requestedPaths.filter((pathname) => /toolchain\/.+\.webc/.test(pathname)).length;
+    if (requestsAfterReload !== toolchainRequestCount) {
+      throw new Error("Clang WebC was downloaded again instead of being read from Cache Storage");
+    }
+    console.log("[ui-smoke] persistent toolchain cache reused after reload");
 
     console.log(
       JSON.stringify(
