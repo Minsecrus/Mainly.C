@@ -7,8 +7,12 @@ import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
 import type { ClangDiagnostic } from "../compiler/diagnostics.js";
 import type { SourceFile } from "../features/files/useLocalFiles.js";
-import { sourceLanguageForFileName } from "../languages.js";
-import { registerCCompletions } from "./cCompletions.js";
+import { sourceLanguageForFileName, type LanguageStandard } from "../languages.js";
+import {
+  clearModelCompletionContext,
+  registerLanguageCompletions,
+  setModelCompletionContext,
+} from "./languageCompletions.js";
 
 type StandaloneEditor = localMonaco.editor.IStandaloneCodeEditor;
 
@@ -16,6 +20,8 @@ interface CodeEditorProps {
   file: SourceFile;
   diagnostics: ClangDiagnostic[];
   readOnly?: boolean;
+  languageStandard?: LanguageStandard;
+  autoCompletionEnabled: boolean;
   onChange: (value: string) => void;
   onReady: (editor: StandaloneEditor) => void;
 }
@@ -91,7 +97,7 @@ function configureMonaco(monaco: Monaco): void {
     themeRegistered = true;
   }
   if (!completionsRegistered) {
-    registerCCompletions(monaco);
+    registerLanguageCompletions(monaco);
     completionsRegistered = true;
   }
 }
@@ -106,6 +112,8 @@ export function CodeEditor({
   file,
   diagnostics,
   readOnly = false,
+  languageStandard,
+  autoCompletionEnabled,
   onChange,
   onReady,
 }: CodeEditorProps) {
@@ -195,6 +203,16 @@ export function CodeEditor({
     );
   }, [diagnostics, file.name, readyEpoch]);
 
+  useEffect(() => {
+    const model = editorRef.current?.getModel();
+    if (!model) return;
+    setModelCompletionContext(model, {
+      enabled: autoCompletionEnabled,
+      standard: languageStandard,
+    });
+    return () => clearModelCompletionContext(model);
+  }, [autoCompletionEnabled, file.id, languageStandard, readyEpoch]);
+
   return (
     <Editor
       key={file.id}
@@ -235,8 +253,13 @@ export function CodeEditor({
         scrollBeyondLastLine: false,
         overviewRulerLanes: 2,
         padding: { top: 14, bottom: 14 },
-        suggest: { showWords: false, preview: true },
-        quickSuggestions: { other: true, comments: false, strings: false },
+        suggest: { showWords: autoCompletionEnabled, preview: true, showSnippets: true },
+        quickSuggestions: autoCompletionEnabled
+          ? { other: true, comments: false, strings: false }
+          : false,
+        suggestOnTriggerCharacters: autoCompletionEnabled,
+        snippetSuggestions: autoCompletionEnabled ? "inline" : "none",
+        wordBasedSuggestions: autoCompletionEnabled ? "currentDocument" : "off",
         tabSize: 4,
         insertSpaces: true,
         bracketPairColorization: { enabled: false },

@@ -4,7 +4,7 @@ import type * as MonacoEditor from "monaco-editor";
 
 import type { ClangDiagnostic } from "../../compiler/diagnostics.js";
 import type { SourceFile } from "../../features/files/useLocalFiles.js";
-import { isSourceCodeFileName } from "../../languages.js";
+import { isSourceCodeFileName, type LanguageStandard } from "../../languages.js";
 import { CodeEditor } from "../../editor/CodeEditor.js";
 import { FileLabel } from "../ui/FileLabel.js";
 
@@ -15,6 +15,8 @@ interface EditorPaneProps {
   diagnostics: ClangDiagnostic[];
   editorRef: RefObject<MonacoEditor.editor.IStandaloneCodeEditor | null>;
   textFileReadOnly?: boolean;
+  languageStandard?: LanguageStandard;
+  autoCompletionEnabled: boolean;
   onEditorReady: () => void;
   onChange: (content: string) => void;
   onSelectFile: (id: string) => void;
@@ -28,6 +30,8 @@ export function EditorPane({
   diagnostics,
   editorRef,
   textFileReadOnly = false,
+  languageStandard,
+  autoCompletionEnabled,
   onEditorReady,
   onChange,
   onSelectFile,
@@ -95,6 +99,8 @@ export function EditorPane({
             file={file}
             diagnostics={diagnostics}
             readOnly={readOnly}
+            languageStandard={languageStandard}
+            autoCompletionEnabled={autoCompletionEnabled}
             onChange={onChange}
             onReady={(editor) => {
               editorRef.current = editor;

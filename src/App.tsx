@@ -33,6 +33,10 @@ import {
   type RunConfiguration,
 } from "./features/run/runConfiguration.js";
 import {
+  loadEditorPreferences,
+  saveEditorPreferences,
+} from "./features/settings/editorPreferences.js";
+import {
   compilerDriverForLanguage,
   DEFAULT_LANGUAGE_STANDARDS,
   isCStandard,
@@ -79,6 +83,7 @@ export default function App() {
   const [autoRunInterval, setAutoRunInterval] = useState<AutoRunInterval>(null);
   const [runConfiguration, setRunConfiguration] = useState(loadRunConfiguration);
   const [languageStandards, setLanguageStandards] = useState(loadLanguageStandards);
+  const [editorPreferences, setEditorPreferences] = useState(loadEditorPreferences);
   const [diagnosticsByFile, setDiagnosticsByFile] = useState<Record<string, ClangDiagnostic[]>>({});
   const [logs, setLogs] = useState<UiCompilerLog[]>([]);
   const [session, setSession] = useState<InteractiveTerminalSession>();
@@ -460,6 +465,14 @@ export default function App() {
     if (!busy) setRunState("idle");
   }
 
+  function changeAutoCompletionEnabled(enabled: boolean): void {
+    setEditorPreferences((current) => {
+      const next = { ...current, autoCompletion: enabled };
+      saveEditorPreferences(next);
+      return next;
+    });
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key.toLowerCase() === "s") {
@@ -698,11 +711,13 @@ export default function App() {
         sourceLanguage={activeSourceLanguage}
         languageStandard={activeLanguageStandard}
         languageStandardDisabled={busy}
+        autoCompletionEnabled={editorPreferences.autoCompletion}
         onRun={() => void runCurrentFile()}
         onStop={stopCurrentRun}
         onAutoRunIntervalChange={changeAutoRunInterval}
         onRunConfigurationChange={changeRunConfiguration}
         onLanguageStandardChange={changeLanguageStandard}
+        onAutoCompletionEnabledChange={changeAutoCompletionEnabled}
         onClearOutput={clearOutput}
         onResetLayout={resetLayout}
         onShowShortcuts={() => setInfoDialog("shortcuts")}
@@ -754,6 +769,8 @@ export default function App() {
             diagnostics={activeDiagnostics}
             editorRef={editorRef}
             textFileReadOnly={busy}
+            languageStandard={activeLanguageStandard}
+            autoCompletionEnabled={editorPreferences.autoCompletion}
             onEditorReady={() => setEditorReady(true)}
             onChange={updateActiveFile}
             onSelectFile={openFile}

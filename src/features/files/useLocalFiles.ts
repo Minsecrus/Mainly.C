@@ -40,7 +40,6 @@ int main(void) {
     }
 
     printf("Hello, %s", name);
-    return 0;
 }
 `;
 
@@ -210,9 +209,9 @@ export function useLocalFiles() {
       id: crypto.randomUUID(),
       name,
       content: isCSourceFileName(name)
-        ? `#include <stdio.h>\n\nint main(void) {\n    puts("Hello, C!");\n    return 0;\n}\n`
+        ? `#include <stdio.h>\n\nint main(void) {\n    puts("Hello, C!");\n}\n`
         : isCppSourceFileName(name)
-          ? `#include <iostream>\n\nint main() {\n    std::cout << "Hello, C++!\\n";\n    return 0;\n}\n`
+          ? `#include <iostream>\n\nint main() {\n    std::cout << "Hello, C++!\\n";\n}\n`
           : "",
     };
     const next = {
