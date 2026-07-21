@@ -1,1 +1,2 @@
 toolchain/clang-22/package/LICENSE-*.txt -text
+toolchain/clang-22/patches/*.patch -text

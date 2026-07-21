@@ -173,6 +173,11 @@ if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot '.git'))) {
     ) 'Unable to configure the WASIX libc source remote'
 }
 
+Invoke-Checked $git @('-C', $SourceRoot, 'config', 'core.autocrlf', 'false') `
+    'Unable to disable line-ending conversion in the WASIX libc source repository'
+Invoke-Checked $git @('-C', $SourceRoot, 'config', 'core.eol', 'lf') `
+    'Unable to configure LF line endings in the WASIX libc source repository'
+
 & $git -C $SourceRoot cat-file -e "$wasixLibcCommit^{commit}" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Invoke-Checked $git @('-C', $SourceRoot, 'fetch', '--depth', '1', 'origin', $wasixLibcCommit) `
