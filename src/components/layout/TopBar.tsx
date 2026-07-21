@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 
+import type { RunConfiguration } from "../../features/run/runConfiguration.js";
 import type { AutoRunInterval, RunState } from "../../types/ui.js";
 import { IconButton } from "../ui/IconButton.js";
 import { MenuItem, MenuSeparator, menuContentClass } from "../ui/Menu.js";
@@ -16,9 +17,11 @@ interface TopBarProps {
   runState: RunState;
   runDisabled?: boolean;
   autoRunInterval: AutoRunInterval;
+  runConfiguration: RunConfiguration;
   onRun: () => void;
   onStop: () => void;
   onAutoRunIntervalChange: (interval: AutoRunInterval) => void;
+  onRunConfigurationChange: (configuration: RunConfiguration) => void;
   onClearOutput: () => void;
   onResetLayout: () => void;
   onShowShortcuts: () => void;
@@ -29,9 +32,11 @@ export function TopBar({
   runState,
   runDisabled = false,
   autoRunInterval,
+  runConfiguration,
   onRun,
   onStop,
   onAutoRunIntervalChange,
+  onRunConfigurationChange,
   onClearOutput,
   onResetLayout,
   onShowShortcuts,
@@ -48,9 +53,11 @@ export function TopBar({
           runState={runState}
           disabled={runDisabled}
           autoRunInterval={autoRunInterval}
+          runConfiguration={runConfiguration}
           onRun={onRun}
           onStop={onStop}
           onAutoRunIntervalChange={onAutoRunIntervalChange}
+          onRunConfigurationChange={onRunConfigurationChange}
         />
 
         <DropdownMenu.Root>
@@ -61,7 +68,7 @@ export function TopBar({
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content side="bottom" align="end" sideOffset={5} className={menuContentClass}>
-              <MenuItem icon={<Trash2 className="size-3.5" />} onSelect={onClearOutput}>清空输出</MenuItem>
+              <MenuItem destructive icon={<Trash2 className="size-3.5" />} onSelect={onClearOutput}>清空输出</MenuItem>
               <MenuItem icon={<RotateCcw className="size-3.5" />} onSelect={onResetLayout}>重置面板布局</MenuItem>
               <MenuSeparator />
               <MenuItem icon={<Keyboard className="size-3.5" />} onSelect={onShowShortcuts}>键盘快捷键</MenuItem>

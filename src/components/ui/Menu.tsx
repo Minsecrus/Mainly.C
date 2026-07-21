@@ -12,17 +12,22 @@ export function MenuItem({
   inset,
   icon,
   shortcut,
+  destructive,
   children,
   ...props
 }: ComponentProps<typeof DropdownMenu.Item> & {
   inset?: boolean;
   icon?: ReactNode;
   shortcut?: string;
+  destructive?: boolean;
 }) {
   return (
     <DropdownMenu.Item
       className={cn(
-        "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 outline-none select-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-white data-[disabled]:opacity-35",
+        "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 outline-none select-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-35",
+        destructive
+          ? "text-red-400 data-[highlighted]:bg-red-500/10 data-[highlighted]:text-red-300"
+          : "data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-white",
         inset && "pl-8",
         className,
       )}

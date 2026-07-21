@@ -42,11 +42,15 @@ const routes = new Map([
   ["/compiler/InteractiveTerminalSession.js", path.join(compilerRoot, "InteractiveTerminalSession.js")],
   ["/compiler/diagnostics.js", path.join(compilerRoot, "diagnostics.js")],
   ["/compiler/index.js", path.join(compilerRoot, "index.js")],
+  ["/compiler/runtimeProtocol.js", path.join(compilerRoot, "runtimeProtocol.js")],
   ["/compiler/types.js", path.join(compilerRoot, "types.js")],
+  ["/compiler/virtualFilesystem.js", path.join(compilerRoot, "virtualFilesystem.js")],
   ["/clang.webc", webcPath],
   ["/fixtures/c23-smoke.c", path.join(scriptDirectory, "c23-smoke.c")],
   ["/fixtures/interactive.c", path.join(scriptDirectory, "interactive.c")],
+  ["/fixtures/run-configuration.c", path.join(scriptDirectory, "run-configuration.c")],
   ["/fixtures/diagnostic-error.c", path.join(scriptDirectory, "diagnostic-error.c")],
+  ["/fixtures/virtual-files.c", path.join(scriptDirectory, "virtual-files.c")],
 ]);
 
 for (const requiredPath of [chromePath, ...routes.values()]) {

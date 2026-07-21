@@ -157,7 +157,7 @@ export function OutputPanel({
           </Tabs.Trigger>
         </Tabs.List>
         <div className="ml-auto flex items-center gap-0.5">
-          <IconButton label="清空当前输出" onClick={onClear} className="size-7">
+          <IconButton label="清空当前输出" onClick={onClear} className="size-7 text-red-400 hover:bg-red-500/10 hover:text-red-300">
             <Eraser className="size-3.5" />
           </IconButton>
           <IconButton label={maximized ? "还原面板" : "最大化面板"} onClick={onToggleMaximize} className="size-7">

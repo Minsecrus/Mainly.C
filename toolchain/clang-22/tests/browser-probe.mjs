@@ -41,13 +41,22 @@ async function main() {
   );
   const runtime = new Runtime({ registry: null });
 
-  const [webcResponse, c23Source, interactiveSource, diagnosticSource] =
+  const [
+    webcResponse,
+    c23Source,
+    interactiveSource,
+    runConfigurationSource,
+    diagnosticSource,
+    virtualFilesSource,
+  ] =
     await timed("fixtures", () =>
       Promise.all([
         fetch("/clang.webc"),
         fetchText("/fixtures/c23-smoke.c"),
         fetchText("/fixtures/interactive.c"),
+        fetchText("/fixtures/run-configuration.c"),
         fetchText("/fixtures/diagnostic-error.c"),
+        fetchText("/fixtures/virtual-files.c"),
       ]),
     );
   if (!webcResponse.ok) throw new Error(`Unable to fetch WebC: ${webcResponse.status}`);
@@ -76,6 +85,29 @@ async function main() {
     throw new Error(`Unexpected C23 output: ${JSON.stringify(c23Output)}`);
   }
 
+  const virtualFiles = await timed("virtual-files:compile", () =>
+    adapter.compile({
+      fileName: "virtual-files.c",
+      source: virtualFilesSource,
+      interactive: true,
+    }),
+  );
+  if (!virtualFiles.ok || !virtualFiles.wasm) {
+    throw new Error(`Virtual filesystem compilation failed:\n${virtualFiles.stdout}${virtualFiles.stderr}`);
+  }
+  const virtualFilesOutput = await timed("virtual-files:run", () =>
+    adapter.runBatch(virtualFiles.wasm, {
+      virtualFiles: { "seed.txt": "hello from the sandbox\n" },
+    }),
+  );
+  if (
+    !virtualFilesOutput.ok ||
+    virtualFilesOutput.stdout !== "copied:hello from the sandbox\n" ||
+    virtualFilesOutput.virtualFiles["created.txt"] !== "copied:hello from the sandbox\n"
+  ) {
+    throw new Error(`Unexpected virtual filesystem output: ${JSON.stringify(virtualFilesOutput)}`);
+  }
+
   if (new URLSearchParams(location.search).get("scope") === "c23") {
     show("PASS", { compiler, c23: c23Output.stdout.trim(), timings });
     return;
@@ -92,15 +124,38 @@ async function main() {
     throw new Error(`Interactive compilation failed:\n${interactive.stdout}${interactive.stderr}`);
   }
 
-  const terminal = await timed("interactive:start", () =>
-    adapter.startInteractive(interactive.wasm, { log }),
+  const interactiveOutput = await timed("interactive:run", () =>
+    adapter.runBatch(interactive.wasm, { stdin: "Ada\r" }),
   );
-  await terminal.waitForOutput("name> ");
-  for (const key of ["A", "d", "a", "\r"]) await terminal.write(key);
-  await terminal.waitForOutput("hello, Ada");
-  const interactiveOutput = await timed("interactive:finish", () => terminal.finish());
   if (!interactiveOutput.ok || !interactiveOutput.stdout.includes("hello, Ada")) {
     throw new Error(`Unexpected interactive output: ${JSON.stringify(interactiveOutput)}`);
+  }
+
+  const runConfiguration = await timed("run-configuration:compile", () =>
+    adapter.compile({
+      fileName: "run-configuration.c",
+      source: runConfigurationSource,
+      interactive: true,
+    }),
+  );
+  if (!runConfiguration.ok || !runConfiguration.wasm) {
+    throw new Error(
+      `Run configuration compilation failed:\n${runConfiguration.stdout}${runConfiguration.stderr}`,
+    );
+  }
+  const runConfigurationOutput = await timed("run-configuration:run", () =>
+    adapter.runBatch(runConfiguration.wasm, {
+      args: ["alpha", "two words"],
+      stdin: "Ada\n",
+    }),
+  );
+  if (
+    !runConfigurationOutput.ok ||
+    runConfigurationOutput.stdout !== "argv=alpha|two words\nstdin=Ada\n"
+  ) {
+    throw new Error(
+      `Unexpected run configuration output: ${JSON.stringify(runConfigurationOutput)}`,
+    );
   }
 
   const diagnostic = await timed("diagnostic", () =>
@@ -117,7 +172,9 @@ async function main() {
   show("PASS", {
     compiler,
     c23: c23Output.stdout.trim(),
+    virtualFilesystem: virtualFilesOutput.stdout.trim(),
     interactive: interactiveOutput.stdout.trim(),
+    runConfiguration: runConfigurationOutput.stdout.trim(),
     diagnostic: `${error.fileName}:${error.line}:${error.column}: error: ${error.message}`,
     timings,
   });

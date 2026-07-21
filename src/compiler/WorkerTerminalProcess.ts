@@ -1,17 +1,26 @@
-import type { Output } from "@wasmer/sdk";
 import wasmerSdkModuleUrl from "@wasmer/sdk/wasm?url";
 import ProgramWorker from "./program.worker?worker";
 
-import type { TerminalProcess } from "./InteractiveTerminalSession.js";
+import type {
+  TerminalProcess,
+  TerminalProcessOutput,
+} from "./InteractiveTerminalSession.js";
 import type {
   ProgramWorkerRequest,
   ProgramWorkerResponse,
 } from "./programWorkerProtocol.js";
 import type { CompilerLogSink } from "./types.js";
+import type { VirtualFileMap } from "./virtualFilesystem.js";
 
 interface PendingInput {
   resolve: () => void;
   reject: (error: Error) => void;
+}
+
+interface WorkerTerminalProcessOptions {
+  args?: string[];
+  virtualFiles?: VirtualFileMap;
+  log?: CompilerLogSink;
 }
 
 function localAssetUrl(path: string): URL {
@@ -38,15 +47,15 @@ class WorkerTerminalProcess implements TerminalProcess {
   #requestId = 0;
   #readyResolve!: () => void;
   #readyReject!: (error: Error) => void;
-  #exitResolve!: (output: Output) => void;
+  #exitResolve!: (output: TerminalProcessOutput) => void;
   #exitReject!: (error: Error) => void;
   #ready: Promise<void>;
-  #exit: Promise<Output>;
+  #exit: Promise<TerminalProcessOutput>;
   #waitRequested = false;
   #closed = false;
 
-  constructor(wasm: Uint8Array, args: string[] | undefined, log?: CompilerLogSink) {
-    this.#log = log;
+  constructor(wasm: Uint8Array, options: WorkerTerminalProcessOptions = {}) {
+    this.#log = options.log;
     this.stdout = new ReadableStream({ start: (controller) => { this.#stdoutController = controller; } });
     this.stderr = new ReadableStream({ start: (controller) => { this.#stderrController = controller; } });
     this.stdin = new WritableStream<Uint8Array>({
@@ -76,7 +85,8 @@ class WorkerTerminalProcess implements TerminalProcess {
       {
         type: "start",
         wasm: bytes,
-        args,
+        args: options.args,
+        virtualFiles: options.virtualFiles,
         sdkModuleUrl: new URL(wasmerSdkModuleUrl, window.location.origin).href,
         sdkWorkerUrl: localAssetUrl("runtime/wasmer-sdk.mjs").href,
       },
@@ -88,7 +98,7 @@ class WorkerTerminalProcess implements TerminalProcess {
     await this.#ready;
   }
 
-  wait(): Promise<Output> {
+  wait(): Promise<TerminalProcessOutput> {
     if (!this.#waitRequested && !this.#closed) {
       this.#waitRequested = true;
       post(this.#worker, { type: "wait" });
@@ -157,6 +167,7 @@ class WorkerTerminalProcess implements TerminalProcess {
         stderr: "",
         stdoutBytes: new Uint8Array(),
         stderrBytes: new Uint8Array(),
+        virtualFiles: message.virtualFiles,
       });
       this.#worker.terminate();
       return;
@@ -180,10 +191,9 @@ class WorkerTerminalProcess implements TerminalProcess {
 
 export async function startWorkerTerminalProcess(
   wasm: Uint8Array,
-  args?: string[],
-  log?: CompilerLogSink,
+  options: WorkerTerminalProcessOptions = {},
 ): Promise<TerminalProcess> {
-  const process = new WorkerTerminalProcess(wasm, args, log);
+  const process = new WorkerTerminalProcess(wasm, options);
   await process.ready();
   return process;
 }

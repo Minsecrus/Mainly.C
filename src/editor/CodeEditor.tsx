@@ -6,7 +6,10 @@ import "monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
 import type { ClangDiagnostic } from "../compiler/diagnostics.js";
-import type { SourceFile } from "../features/files/useLocalFiles.js";
+import {
+  isCSourceFileName,
+  type SourceFile,
+} from "../features/files/useLocalFiles.js";
 import { registerCCompletions } from "./cCompletions.js";
 
 type StandaloneEditor = localMonaco.editor.IStandaloneCodeEditor;
@@ -197,7 +200,7 @@ export function CodeEditor({
       key={file.id}
       height="100%"
       path={`file:///${file.name}`}
-      language="c"
+      language={isCSourceFileName(file.name) ? "c" : "plaintext"}
       theme="mainly-monochrome"
       value={file.content}
       beforeMount={configureMonaco}

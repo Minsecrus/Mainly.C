@@ -1,7 +1,13 @@
+import type {
+  VirtualFileMap,
+  VirtualTextFileMap,
+} from "./virtualFilesystem.js";
+
 export interface ProgramWorkerStartMessage {
   type: "start";
   wasm: ArrayBuffer;
   args?: string[];
+  virtualFiles?: VirtualFileMap;
   sdkModuleUrl: string;
   sdkWorkerUrl: string;
 }
@@ -32,5 +38,5 @@ export type ProgramWorkerResponse =
   | { type: "stdout"; data: ArrayBuffer }
   | { type: "stderr"; data: ArrayBuffer }
   | { type: "stdin-result"; requestId: number; error?: string }
-  | { type: "exit"; code: number; ok: boolean }
+  | { type: "exit"; code: number; ok: boolean; virtualFiles: VirtualTextFileMap }
   | { type: "error"; phase: string; message: string; stack?: string };

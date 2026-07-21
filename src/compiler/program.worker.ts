@@ -1,9 +1,13 @@
-import { Wasmer, init } from "@wasmer/sdk";
+import { Directory, Wasmer, init } from "@wasmer/sdk";
 
 import type {
   ProgramWorkerRequest,
   ProgramWorkerResponse,
 } from "./programWorkerProtocol.js";
+import {
+  VIRTUAL_WORKSPACE_PATH,
+  readVirtualTextFiles,
+} from "./virtualFilesystem.js";
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<ProgramWorkerRequest>) => void) | null;
@@ -48,7 +52,12 @@ async function start(message: Extract<ProgramWorkerRequest, { type: "start" }>):
   });
   const program = await Wasmer.fromFile(new Uint8Array(message.wasm));
   if (!program.entrypoint) throw new Error("Compiled WebAssembly has no entrypoint");
-  const instance = await program.entrypoint.run({ args: message.args });
+  const workspace = new Directory(message.virtualFiles);
+  const instance = await program.entrypoint.run({
+    args: message.args,
+    cwd: VIRTUAL_WORKSPACE_PATH,
+    mount: { [VIRTUAL_WORKSPACE_PATH]: workspace },
+  });
   if (!instance.stdin) throw new Error("The WASIX runtime did not expose a stdin stream");
   stdinWriter = instance.stdin.getWriter();
   const stdoutDone = pump(instance.stdout, "stdout");
@@ -56,7 +65,12 @@ async function start(message: Extract<ProgramWorkerRequest, { type: "start" }>):
   waitForInstance = async () => {
     const output = await instance.wait();
     await Promise.all([stdoutDone, stderrDone]);
-    post({ type: "exit", code: output.code, ok: output.ok });
+    post({
+      type: "exit",
+      code: output.code,
+      ok: output.ok,
+      virtualFiles: await readVirtualTextFiles(workspace),
+    });
   };
   post({ type: "ready" });
 }

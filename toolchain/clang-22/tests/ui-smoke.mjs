@@ -218,16 +218,16 @@ async function run() {
       undefined,
       { timeout: 5_000 },
     );
-    await page.waitForFunction(
-      () => {
-        const stored = localStorage.getItem("mainly.c.workspace.v1");
-        if (!stored) return false;
-        const workspace = JSON.parse(stored);
-        return workspace.files?.some((file) => file.content === "int main(void) { return 0 }");
-      },
-      undefined,
-      { timeout: 5_000 },
-    );
+    await page.locator("section svg.lucide-circle").waitFor({ state: "visible", timeout: 5_000 });
+    const invalidDraftWasPersisted = await page.evaluate(() => {
+      const stored = localStorage.getItem("mainly.c.workspace.v1");
+      if (!stored) return false;
+      const workspace = JSON.parse(stored);
+      return workspace.files?.some((file) => file.content === "int main(void) { return 0 }");
+    });
+    if (invalidDraftWasPersisted) {
+      throw new Error("Unsaved editor content was written to persistent workspace storage");
+    }
     console.log("[ui-smoke] map a Clang diagnostic into Error Lens");
     await page.getByRole("button", { name: "运行当前文件" }).click();
     await page.waitForFunction(
@@ -263,17 +263,16 @@ async function run() {
     await editorInput.press("Control+A");
     await editorInput.press("Backspace");
     await page.keyboard.insertText(unformatted);
-    await page.waitForFunction(
-      (expected) => {
-        const stored = localStorage.getItem("mainly.c.workspace.v1");
-        if (!stored) return false;
-        const workspace = JSON.parse(stored);
-        return workspace.files?.some((file) => file.content === expected);
-      },
-      unformatted,
-      { timeout: 5_000 },
-    );
     await page.locator("section svg.lucide-circle").waitFor({ state: "visible", timeout: 5_000 });
+    const unformattedDraftWasPersisted = await page.evaluate((expected) => {
+      const stored = localStorage.getItem("mainly.c.workspace.v1");
+      if (!stored) return false;
+      const workspace = JSON.parse(stored);
+      return workspace.files?.some((file) => file.content === expected);
+    }, unformatted);
+    if (unformattedDraftWasPersisted) {
+      throw new Error("Ctrl+S semantics regressed to automatic persistence");
+    }
     await page.keyboard.press("Control+S");
     const formattedFragment = "    int value = 1;\n    if (value > 0) {";
     await page.waitForFunction(

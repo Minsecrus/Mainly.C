@@ -11,10 +11,14 @@ import {
   type TerminalSessionOptions,
 } from "./InteractiveTerminalSession.js";
 import type { CompilerLogSink } from "./types.js";
-import { startWorkerTerminalProcess } from "./WorkerTerminalProcess.js";
 import { MAINLY_EXIT_MARKER } from "./runtimeProtocol.js";
+import {
+  VIRTUAL_WORKSPACE_PATH,
+  readVirtualTextFiles,
+  type VirtualFileMap,
+  type VirtualTextFileMap,
+} from "./virtualFilesystem.js";
 
-const WORKSPACE = "/workspace";
 const DEFAULT_TIMEOUT_MS = 60_000;
 const INTERACTIVE_RUNTIME_HEADER = "__mainly_runtime.h";
 
@@ -45,6 +49,7 @@ const INTERACTIVE_RUNTIME_SOURCE = `#ifndef MAINLY_C_RUNTIME_H
 #define MAINLY_C_RUNTIME_H
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 static void __mainly_c_emit_exit_marker(void) {
     static const char marker[] = "\\036mainly.c:exit\\036";
@@ -53,7 +58,8 @@ static void __mainly_c_emit_exit_marker(void) {
 }
 
 __attribute__((constructor))
-static void __mainly_c_register_exit_marker(void) {
+static void __mainly_c_initialize_runtime(void) {
+    (void)chdir("${VIRTUAL_WORKSPACE_PATH}");
     (void)atexit(__mainly_c_emit_exit_marker);
 }
 #endif
@@ -122,6 +128,17 @@ export interface CompileResult {
 
 export interface StartProgramOptions extends TerminalSessionOptions {
   args?: string[];
+  virtualFiles?: VirtualFileMap;
+}
+
+export interface RunBatchOptions {
+  stdin?: string | Uint8Array;
+  args?: string[];
+  virtualFiles?: VirtualFileMap;
+}
+
+export interface RunBatchResult extends Output {
+  virtualFiles: VirtualTextFileMap;
 }
 
 interface CommandResult {
@@ -231,14 +248,14 @@ export class ClangCompilerAdapter {
       `-std=${options.standard ?? "c23"}`,
       ...DEFAULT_COMPILER_FLAGS,
       ...(options.interactive
-        ? ["-include", `${WORKSPACE}/${INTERACTIVE_RUNTIME_HEADER}`]
+        ? ["-include", `${VIRTUAL_WORKSPACE_PATH}/${INTERACTIVE_RUNTIME_HEADER}`]
         : []),
       ...(options.interactive ? INTERACTIVE_RUNTIME_FLAGS : []),
       ...(options.additionalArguments ?? []),
-      `${WORKSPACE}/${options.fileName}`,
+      `${VIRTUAL_WORKSPACE_PATH}/${options.fileName}`,
       ...DEFAULT_LINKER_FLAGS,
       "-o",
-      `${WORKSPACE}/${outputName}`,
+      `${VIRTUAL_WORKSPACE_PATH}/${outputName}`,
     ];
 
     const plan = await this.#runCommand("clang", ["-###", ...compilerArgs], workspace, "plan");
@@ -285,26 +302,34 @@ export class ClangCompilerAdapter {
     };
   }
 
-  async runBatch(wasm: Uint8Array, stdin?: string | Uint8Array, args?: string[]): Promise<Output> {
+  async runBatch(wasm: Uint8Array, options: RunBatchOptions = {}): Promise<RunBatchResult> {
     const program = await Wasmer.fromFile(wasm, this.#runtime);
     if (!program.entrypoint) throw new Error("Compiled WebAssembly has no entrypoint");
-    const instance = await program.entrypoint.run({ args, stdin });
-    return withTimeout(
+    const workspace = new Directory(options.virtualFiles);
+    const instance = await program.entrypoint.run({
+      args: options.args,
+      stdin: options.stdin,
+      cwd: VIRTUAL_WORKSPACE_PATH,
+      mount: { [VIRTUAL_WORKSPACE_PATH]: workspace },
+    });
+    const output = await withTimeout(
       instance.wait(),
       this.#commandTimeoutMs,
       `Program did not exit within ${this.#commandTimeoutMs}ms`,
     );
+    return { ...output, virtualFiles: await readVirtualTextFiles(workspace) };
   }
 
   async startInteractive(
     wasm: Uint8Array,
     options: StartProgramOptions = {},
   ): Promise<InteractiveTerminalSession> {
-    const process = await startWorkerTerminalProcess(
-      wasm,
-      options.args,
-      options.log ?? this.#log,
-    );
+    const { startWorkerTerminalProcess } = await import("./WorkerTerminalProcess.js");
+    const process = await startWorkerTerminalProcess(wasm, {
+      args: options.args,
+      virtualFiles: options.virtualFiles,
+      log: options.log ?? this.#log,
+    });
     return new InteractiveTerminalSession(process, {
       onStdout: options.onStdout,
       onStderr: options.onStderr,
@@ -344,7 +369,7 @@ export class ClangCompilerAdapter {
     this.#log?.({ source: "compiler", event: "command:spawn", phase, args: effectiveArgs });
     const instance = await command.run({
       args: effectiveArgs,
-      mount: { [WORKSPACE]: workspace },
+      mount: { [VIRTUAL_WORKSPACE_PATH]: workspace },
     });
     this.#log?.({
       source: "compiler",

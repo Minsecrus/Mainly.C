@@ -1,6 +1,7 @@
 import type { Output } from "@wasmer/sdk";
 
 import type { CompilerLogSink } from "./types.js";
+import type { VirtualTextFileMap } from "./virtualFilesystem.js";
 
 export interface TerminalSessionOptions {
   onStdout?: (text: string) => void;
@@ -9,7 +10,11 @@ export interface TerminalSessionOptions {
   log?: CompilerLogSink;
 }
 
-export interface TerminalResult extends Output {
+export interface TerminalProcessOutput extends Output {
+  virtualFiles: VirtualTextFileMap;
+}
+
+export interface TerminalResult extends TerminalProcessOutput {
   stdout: string;
   stderr: string;
 }
@@ -18,7 +23,7 @@ export interface TerminalProcess {
   readonly stdin?: WritableStream<Uint8Array>;
   readonly stdout: ReadableStream<Uint8Array>;
   readonly stderr: ReadableStream<Uint8Array>;
-  wait(): Promise<Output>;
+  wait(): Promise<TerminalProcessOutput>;
   terminate(): void;
 }
 

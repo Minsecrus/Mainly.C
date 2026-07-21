@@ -9,6 +9,7 @@ interface FileNameDialogProps {
   title: string;
   description: string;
   initialValue?: string;
+  placeholder?: string;
   submitLabel: string;
   onOpenChange: (open: boolean) => void;
   onSubmit: (name: string) => void;
@@ -19,6 +20,7 @@ export function FileNameDialog({
   title,
   description,
   initialValue = "",
+  placeholder = "main.c",
   submitLabel,
   onOpenChange,
   onSubmit,
@@ -74,7 +76,7 @@ export function FileNameDialog({
               onFocus={(event) => event.currentTarget.select()}
               spellCheck={false}
               className="h-9 w-full rounded-md border border-white/10 bg-black/40 px-3 font-mono text-sm text-neutral-100 outline-none transition focus:border-neutral-500 focus:ring-1 focus:ring-neutral-600"
-              placeholder="main.c"
+              placeholder={placeholder}
             />
             <div className="mt-2 min-h-4 text-[11px] text-neutral-400" role="alert">
               {error}
