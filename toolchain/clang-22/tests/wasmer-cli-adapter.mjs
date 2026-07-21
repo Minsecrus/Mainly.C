@@ -18,7 +18,7 @@ const defaultWasmer = path.join(
 const defaultWebc = path.join(
   repositoryRoot,
   "dist",
-  "mainly-c-clang-22.1.0-1.webc",
+  "mainly-c-clang-22.1.0-4.webc",
 );
 
 const wasmerPath = process.env.WASMER_PATH || defaultWasmer;
@@ -87,6 +87,7 @@ function parseCommandPlan(output) {
 
 function entrypointFor(executable) {
   const name = path.posix.basename(executable).toLowerCase();
+  if (name === "clang++" || name.startsWith("clang++-")) return "clang++";
   if (name === "clang" || name.startsWith("clang-")) return "clang";
   if (name === "wasm-ld" || name === "ld.lld") return "wasm-ld";
   if (name === "ar" || name === "llvm-ar") return "llvm-ar";
@@ -116,19 +117,24 @@ const defaultCompilerFlags = [
   "-fexec-charset=UTF-8",
 ];
 
-function compile(workDirectory, sourceName, outputName, extraArgs = []) {
+function compile(workDirectory, sourceName, outputName, extraArgs = [], standard) {
+  const cpp = /\.(?:cpp|cc|cxx)$/i.test(sourceName);
+  const driver = cpp ? "clang++" : "clang";
   const commonArgs = [
     "run",
     "--volume",
     guestVolume(workDirectory),
     "-e",
-    "clang",
+    driver,
     webcPath,
     "--",
   ];
   const compilerArgs = [
-    "-std=c23",
+    `-std=${standard ?? (cpp ? "c++23" : "c23")}`,
+    "-x",
+    cpp ? "c++" : "c",
     ...defaultCompilerFlags,
+    ...(cpp ? ["-fno-exceptions"] : []),
     ...extraArgs,
     `/workspace/${sourceName}`,
     "-lm",
@@ -200,7 +206,16 @@ const interactiveRuntimeFlags = [
 
 const workDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "mainly-c-clang22-test-"));
 try {
-  for (const fixture of ["c23-smoke.c", "interactive.c", "diagnostic-error.c"]) {
+  for (const fixture of [
+    "c23-smoke.c",
+    "c23-library.c",
+    "interactive.c",
+    "diagnostic-error.c",
+    "language-standard.cpp",
+    "filesystem-smoke.cpp",
+    "print-smoke.cpp",
+    "virtual-files.c",
+  ]) {
     fs.copyFileSync(path.join(scriptDirectory, fixture), path.join(workDirectory, fixture));
   }
   fs.copyFileSync(
@@ -220,6 +235,83 @@ try {
   const c23Run = runWasmer(["run", path.join(workDirectory, "c23-smoke.wasm")]);
   if (c23Run.stdout.trim() !== "C23:42:ok") {
     throw new Error(`Unexpected C23 output: ${JSON.stringify(c23Run.stdout)}`);
+  }
+
+  const c23Library = compile(
+    workDirectory,
+    "c23-library.c",
+    "c23-library.wasm",
+    interactiveRuntimeFlags,
+    "c23",
+  );
+  if (c23Library.result.status !== 0) {
+    throw new Error(
+      `WASIX C23 library compilation failed:\n${c23Library.result.stdout}${c23Library.result.stderr}`,
+    );
+  }
+  const c23LibraryRun = runWasmer(["run", path.join(workDirectory, "c23-library.wasm")]);
+  if (c23LibraryRun.stdout.trim() !== "C23-lib:42:ok") {
+    throw new Error(`Unexpected WASIX C23 library output: ${JSON.stringify(c23LibraryRun.stdout)}`);
+  }
+
+  const virtualFiles = compile(
+    workDirectory,
+    "virtual-files.c",
+    "virtual-files.wasm",
+    interactiveRuntimeFlags,
+    "c23",
+  );
+  if (virtualFiles.result.status !== 0) {
+    throw new Error(
+      `Virtual filesystem fixture compilation failed:\n${virtualFiles.result.stdout}${virtualFiles.result.stderr}`,
+    );
+  }
+
+  const cpp23 = compile(
+    workDirectory,
+    "language-standard.cpp",
+    "language-standard.wasm",
+    interactiveRuntimeFlags,
+    "c++23",
+  );
+  if (cpp23.result.status !== 0) {
+    throw new Error(`C++23 compilation failed:\n${cpp23.result.stdout}${cpp23.result.stderr}`);
+  }
+  const cpp23Run = runWasmer(["run", path.join(workDirectory, "language-standard.wasm")]);
+  if (cpp23Run.stdout.trim() !== "202302") {
+    throw new Error(`Unexpected C++23 output: ${JSON.stringify(cpp23Run.stdout)}`);
+  }
+
+  const print = compile(
+    workDirectory,
+    "print-smoke.cpp",
+    "print-smoke.wasm",
+    interactiveRuntimeFlags,
+    "c++23",
+  );
+  if (print.result.status !== 0) {
+    throw new Error(`std::println compilation failed:\n${print.result.stdout}${print.result.stderr}`);
+  }
+  const printRun = runWasmer(["run", path.join(workDirectory, "print-smoke.wasm")]);
+  if (printRun.stdout.trim() !== "Hello, C++!") {
+    throw new Error(`Unexpected std::println output: ${JSON.stringify(printRun.stdout)}`);
+  }
+
+  const filesystem = compile(
+    workDirectory,
+    "filesystem-smoke.cpp",
+    "filesystem-smoke.wasm",
+    interactiveRuntimeFlags,
+    "c++17",
+  );
+  if (filesystem.result.status !== 0) {
+    throw new Error(
+      `std::filesystem compilation failed:\n${filesystem.result.stdout}${filesystem.result.stderr}`,
+    );
+  }
+  const filesystemRun = runWasmer(["run", path.join(workDirectory, "filesystem-smoke.wasm")]);
+  if (filesystemRun.stdout.trim() !== "fstream=created by C++,filesystem=ok,space=unsupported") {
+    throw new Error(`Unexpected std::filesystem output: ${JSON.stringify(filesystemRun.stdout)}`);
   }
 
   const interactive = compile(
@@ -286,6 +378,10 @@ try {
       {
         compiler: version.stdout.split(/\r?\n/, 1)[0],
         c23: c23Run.stdout.trim(),
+        c23Library: c23LibraryRun.stdout.trim(),
+        cpp23: cpp23Run.stdout.trim(),
+        print: printRun.stdout.trim(),
+        filesystem: filesystemRun.stdout.trim(),
         interactive: interactiveRun.stdout.trim(),
         numberLab: "strict compile and interactive output passed",
         diagnostic: plainDiagnosticOutput.split(/\r?\n/).find((line) => line.includes(" error:")),
@@ -300,5 +396,9 @@ try {
   if (!resolvedWork.startsWith(`${resolvedTemp}${path.sep}`)) {
     throw new Error(`Refusing to remove non-temporary test directory: ${resolvedWork}`);
   }
-  fs.rmSync(resolvedWork, { recursive: true, force: true });
+  if (process.env.KEEP_CLANG_TEST_OUTPUT === "1") {
+    console.error(`[wasmer-cli-adapter] kept test output: ${resolvedWork}`);
+  } else {
+    fs.rmSync(resolvedWork, { recursive: true, force: true });
+  }
 }

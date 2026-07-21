@@ -3,6 +3,10 @@ param(
     [string]$SourceArchive,
     [string]$WasixCompatArchive,
     [string]$WasmerPath,
+    [string]$LlvmRoot,
+    [string]$CMakePath,
+    [string]$NinjaPath,
+    [string]$LibcxxSourceRoot,
     [switch]$Force
 )
 
@@ -191,6 +195,37 @@ foreach ($license in $licenseDownloads) {
     }
 }
 
+$libcBuildArguments = @{
+    SysrootPath = $wasixSysroot
+}
+if ($LlvmRoot) {
+    $libcBuildArguments.LlvmRoot = $LlvmRoot
+}
+if ($Force) {
+    $libcBuildArguments.Force = $true
+}
+& (Join-Path $PSScriptRoot 'build-wasix-libc.ps1') @libcBuildArguments
+
+$libcxxBuildArguments = @{
+    SysrootPath = $wasixSysroot
+}
+if ($LlvmRoot) {
+    $libcxxBuildArguments.LlvmRoot = $LlvmRoot
+}
+if ($CMakePath) {
+    $libcxxBuildArguments.CMakePath = $CMakePath
+}
+if ($NinjaPath) {
+    $libcxxBuildArguments.NinjaPath = $NinjaPath
+}
+if ($LibcxxSourceRoot) {
+    $libcxxBuildArguments.SourceRoot = $LibcxxSourceRoot
+}
+if ($Force) {
+    $libcxxBuildArguments.Force = $true
+}
+& (Join-Path $PSScriptRoot 'build-wasix-libcxx.ps1') @libcxxBuildArguments
+
 $requiredFiles = @(
     (Join-Path $binRoot 'llvm.wasm'),
     (Join-Path $sysroot 'include\wasm32-wasip1\stdio.h'),
@@ -198,12 +233,23 @@ $requiredFiles = @(
     (Join-Path $sysroot 'lib\wasm32-wasip1\libc.a'),
     (Join-Path $sysroot 'lib\wasm32-unknown-wasip1\libclang_rt.builtins.a'),
     (Join-Path $wasixSysroot 'include\stdio.h'),
+    (Join-Path $wasixSysroot 'include\sys\statvfs.h'),
     (Join-Path $wasixSysroot 'lib\wasm32-wasi\crt1.o'),
     (Join-Path $wasixSysroot 'lib\wasm32-wasi\libc.a'),
+    (Join-Path $wasixSysroot 'lib\wasm32-wasi\libc.imports'),
     (Join-Path $wasixWasip1Lib 'crt1.o'),
     (Join-Path $wasixWasip1Lib 'libc.a'),
     (Join-Path $wasixWasip1Lib 'libm.a'),
     (Join-Path $wasixWasip1Lib 'libpthread.a'),
+    (Join-Path $wasixSysroot 'include\c++\v1\print'),
+    (Join-Path $wasixSysroot 'include\c++\v1\filesystem'),
+    (Join-Path $wasixSysroot 'include\c++\v1\__config_site'),
+    (Join-Path $wasixSysroot 'lib\wasm32-wasi\libc++.a'),
+    (Join-Path $wasixSysroot 'lib\wasm32-wasi\libc++abi.a'),
+    (Join-Path $wasixWasip1Lib 'libc++.a'),
+    (Join-Path $wasixWasip1Lib 'libc++abi.a'),
+    (Join-Path $wasixSysroot 'LIBC-BUILD.json'),
+    (Join-Path $wasixSysroot 'LIBCXX-BUILD.json'),
     $wasixBuiltins,
     (Join-Path $wasixResourceLib 'libclang_rt.builtins.a'),
     (Join-Path $wasixWasip1ResourceLib 'libclang_rt.builtins.a')

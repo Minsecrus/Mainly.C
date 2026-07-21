@@ -1,4 +1,4 @@
-const C_FORMAT_STYLE = JSON.stringify({
+const FORMAT_STYLE = JSON.stringify({
   BasedOnStyle: "LLVM",
   IndentWidth: 4,
   TabWidth: 4,
@@ -27,11 +27,11 @@ async function loadFormatter(): Promise<ClangFormatModule> {
   return formatterModule;
 }
 
-export async function preloadCFormatter(): Promise<void> {
+export async function preloadFormatter(): Promise<void> {
   await loadFormatter();
 }
 
-export async function formatCSource(source: string, fileName: string): Promise<string> {
+export async function formatSource(source: string, fileName: string): Promise<string> {
   const formatter = await loadFormatter();
-  return formatter.format(source, fileName, C_FORMAT_STYLE);
+  return formatter.format(source, fileName, FORMAT_STYLE);
 }

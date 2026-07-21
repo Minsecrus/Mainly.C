@@ -3,6 +3,7 @@ import {
   Download,
   FilePlus2,
   FileText,
+  LockKeyhole,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -13,7 +14,6 @@ import {
 import { AlertDialog, DropdownMenu } from "radix-ui";
 
 import {
-  isCSourceFileName,
   type SourceFile,
   type SourceFileKind,
 } from "../../features/files/useLocalFiles.js";
@@ -22,6 +22,7 @@ import {
   type WorkspaceTransferData,
 } from "../../features/files/workspaceTransfer.js";
 import { cn } from "../../lib/cn.js";
+import { isSourceCodeFileName } from "../../languages.js";
 import { FileLabel } from "../ui/FileLabel.js";
 import { FileNameDialog } from "../ui/FileNameDialog.js";
 import { IconButton } from "../ui/IconButton.js";
@@ -30,6 +31,7 @@ import { MenuItem, MenuSeparator, menuContentClass } from "../ui/Menu.js";
 interface FileExplorerProps {
   files: SourceFile[];
   activeFileId: string;
+  textFilesLocked?: boolean;
   onSelect: (id: string) => void;
   onCreate: (name: string, kind?: SourceFileKind) => void;
   onRename: (id: string, name: string) => void;
@@ -43,6 +45,7 @@ interface FileExplorerProps {
 export function FileExplorer({
   files,
   activeFileId,
+  textFilesLocked = false,
   onSelect,
   onCreate,
   onRename,
@@ -63,7 +66,7 @@ export function FileExplorer({
   const [clearNonCodeOpen, setClearNonCodeOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const hasNonCodeFiles = files.some((file) => !isCSourceFileName(file.name));
+  const hasNonCodeFiles = files.some((file) => !isSourceCodeFileName(file.name));
 
   async function selectImportFile(file: File | undefined): Promise<void> {
     if (!file) return;
@@ -81,7 +84,7 @@ export function FileExplorer({
       <aside className="flex h-full w-[218px] shrink-0 flex-col border-r border-white/[0.12] bg-[#161616]">
         <div className="flex h-9 shrink-0 items-center px-3 text-[10px] font-semibold tracking-[0.14em] text-neutral-300 uppercase">
           <span className="flex-1">文件</span>
-          <IconButton label="新建 C 文件" onClick={() => setCreateKind("c")} className="size-7">
+          <IconButton label="新建文件" onClick={() => setCreateKind("c")} className="size-7">
             <Plus className="size-3.5" />
           </IconButton>
           <DropdownMenu.Root>
@@ -95,11 +98,22 @@ export function FileExplorer({
                 <MenuItem icon={<FilePlus2 className="size-3.5" />} onSelect={() => setCreateKind("c")}>
                   新建 C 文件
                 </MenuItem>
-                <MenuItem icon={<FileText className="size-3.5" />} onSelect={() => setCreateKind("text")}>
+                <MenuItem icon={<FilePlus2 className="size-3.5" />} onSelect={() => setCreateKind("cpp")}>
+                  新建 C++ 文件
+                </MenuItem>
+                <MenuItem
+                  disabled={textFilesLocked}
+                  icon={<FileText className="size-3.5" />}
+                  onSelect={() => setCreateKind("text")}
+                >
                   新建文本文件
                 </MenuItem>
                 <MenuSeparator />
-                <MenuItem icon={<Upload className="size-3.5" />} onSelect={() => importInputRef.current?.click()}>
+                <MenuItem
+                  disabled={textFilesLocked}
+                  icon={<Upload className="size-3.5" />}
+                  onSelect={() => importInputRef.current?.click()}
+                >
                   导入工作区
                 </MenuItem>
                 <MenuItem icon={<Download className="size-3.5" />} onSelect={onExportWorkspace}>
@@ -108,13 +122,18 @@ export function FileExplorer({
                 <MenuSeparator />
                 <MenuItem
                   destructive
-                  disabled={!hasNonCodeFiles}
+                  disabled={textFilesLocked || !hasNonCodeFiles}
                   icon={<Trash2 className="size-3.5" />}
                   onSelect={() => setClearNonCodeOpen(true)}
                 >
                   清除非代码文件
                 </MenuItem>
-                <MenuItem destructive icon={<RotateCcw className="size-3.5" />} onSelect={() => setResetOpen(true)}>
+                <MenuItem
+                  destructive
+                  disabled={textFilesLocked}
+                  icon={<RotateCcw className="size-3.5" />}
+                  onSelect={() => setResetOpen(true)}
+                >
                   恢复初始工作区
                 </MenuItem>
               </DropdownMenu.Content>
@@ -125,6 +144,7 @@ export function FileExplorer({
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {files.map((file) => {
             const active = file.id === activeFileId;
+            const locked = textFilesLocked && !isSourceCodeFileName(file.name);
             return (
               <div
                 key={file.id}
@@ -143,23 +163,39 @@ export function FileExplorer({
                     className="flex-1"
                     markerClassName={cn("text-[10px] font-semibold", active ? "text-white" : "text-neutral-400")}
                   />
+                  {locked && (
+                    <LockKeyhole
+                      aria-label="程序运行期间只读"
+                      className="mr-1 size-3 shrink-0 text-neutral-500"
+                    />
+                  )}
                 </button>
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger asChild>
                     <button
                       type="button"
                       aria-label={`${file.name} 操作`}
-                      className="flex size-6 items-center justify-center rounded text-neutral-400 opacity-0 outline-none group-hover:opacity-100 hover:bg-white/[0.1] hover:text-white focus:opacity-100"
+                      disabled={locked}
+                      className="flex size-6 items-center justify-center rounded text-neutral-400 opacity-0 outline-none group-hover:opacity-100 hover:bg-white/[0.1] hover:text-white focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-25"
                     >
                       <MoreHorizontal className="size-3.5" />
                     </button>
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Portal>
                     <DropdownMenu.Content side="right" align="start" sideOffset={4} className={menuContentClass}>
-                      <MenuItem icon={<Pencil className="size-3.5" />} onSelect={() => setRenameTarget(file)}>
+                      <MenuItem
+                        disabled={textFilesLocked}
+                        icon={<Pencil className="size-3.5" />}
+                        onSelect={() => setRenameTarget(file)}
+                      >
                         重命名
                       </MenuItem>
-                      <MenuItem destructive icon={<Trash2 className="size-3.5" />} onSelect={() => setDeleteTarget(file)}>
+                      <MenuItem
+                        destructive
+                        disabled={locked}
+                        icon={<Trash2 className="size-3.5" />}
+                        onSelect={() => setDeleteTarget(file)}
+                      >
                         删除
                       </MenuItem>
                     </DropdownMenu.Content>
@@ -186,18 +222,18 @@ export function FileExplorer({
       <FileNameDialog
         open={createKind !== null}
         onOpenChange={(open) => !open && setCreateKind(null)}
-        title={createKind === "text" ? "新建文本文件" : "新建 C 文件"}
+        title={createKind === "text" ? "新建文本文件" : createKind === "cpp" ? "新建 C++ 文件" : "新建文件"}
         description="文件保存在当前浏览器中，不会上传。"
         submitLabel="创建"
-        initialValue={createKind === "text" ? "untitled.txt" : "untitled.c"}
-        placeholder={createKind === "text" ? "input.txt" : "main.c"}
+        initialValue={createKind === "text" ? "untitled.txt" : createKind === "cpp" ? "untitled.cpp" : "untitled.c"}
+        placeholder={createKind === "text" ? "input.txt" : createKind === "cpp" ? "main.cpp" : "main.c"}
         onSubmit={(name) => createKind && onCreate(name, createKind)}
       />
       <FileNameDialog
         open={renameTarget !== null}
         onOpenChange={(open) => !open && setRenameTarget(null)}
         title="重命名文件"
-        description="支持 .c 和 .txt 文件。"
+        description="支持 .c、.cpp、.cc、.cxx 和 .txt 文件。"
         submitLabel="重命名"
         initialValue={renameTarget?.name}
         onSubmit={(name) => renameTarget && onRename(renameTarget.id, name)}
@@ -287,7 +323,7 @@ export function FileExplorer({
               清除所有非代码文件？
             </AlertDialog.Title>
             <AlertDialog.Description className="mt-2 text-xs leading-5 text-neutral-300">
-              所有 .txt 文件将从浏览器工作区中删除，.c 文件会保留。此操作无法撤销。
+              所有 .txt 文件将从浏览器工作区中删除，C 与 C++ 源文件会保留。此操作无法撤销。
             </AlertDialog.Description>
             <div className="mt-5 flex justify-end gap-2">
               <AlertDialog.Cancel asChild>

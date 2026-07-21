@@ -1,7 +1,7 @@
 [package]
 name = "mainly-c/clang-22"
-version = "22.1.0-1"
-description = "Clang/LLD 22.1.0 and a complete WASI sysroot for mainly.c"
+version = "22.1.0-4"
+description = "Clang/LLD 22.1.0 and C/C++ WASI sysroots for mainly.c"
 license = "Apache-2.0 WITH LLVM-exception"
 license-file = "LICENSE-LLVM.txt"
 readme = "README.md"

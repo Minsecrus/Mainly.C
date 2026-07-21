@@ -3,7 +3,6 @@ import http from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import zlib from "node:zlib";
 
 import { chromium } from "playwright-core";
 
@@ -45,8 +44,30 @@ async function run() {
   if (!fs.existsSync(path.join(outputRoot, "index.html"))) {
     throw new Error("Production UI is missing. Run npm run build first.");
   }
+  const rawToolchainPath = path.join(outputRoot, "toolchain", "mainly-c-clang-22.1.0-4.webc");
+  const compressedToolchainPath = `${rawToolchainPath}.gz`;
+  if (fs.existsSync(rawToolchainPath)) {
+    throw new Error("Production UI still contains the uncompressed Clang WebC");
+  }
+  if (!fs.existsSync(compressedToolchainPath)) {
+    throw new Error("Production UI is missing the compressed Clang WebC");
+  }
+  const compressedToolchainSize = fs.statSync(compressedToolchainPath).size;
+  const sourceToolchainPath = path.join(repositoryRoot, "dist", path.basename(rawToolchainPath));
+  if (compressedToolchainSize >= fs.statSync(sourceToolchainPath).size) {
+    throw new Error("Production Clang WebC was not made smaller by gzip");
+  }
+  const gzipMagic = Buffer.alloc(2);
+  const gzipHandle = fs.openSync(compressedToolchainPath, "r");
+  try {
+    fs.readSync(gzipHandle, gzipMagic, 0, gzipMagic.byteLength, 0);
+  } finally {
+    fs.closeSync(gzipHandle);
+  }
+  if (gzipMagic[0] !== 0x1f || gzipMagic[1] !== 0x8b) {
+    throw new Error("Production Clang WebC does not have a gzip header");
+  }
   const requestedPaths = [];
-  let compressedToolchain;
   const server = http.createServer((request, response) => {
     response.setHeader("Cache-Control", "no-store");
     const pathname = new URL(request.url || "/", "http://localhost").pathname;
@@ -70,18 +91,6 @@ async function run() {
       return;
     }
     const stat = fs.statSync(filePath);
-    if (filePath.endsWith(".webc")) {
-      compressedToolchain ??= zlib.gzipSync(fs.readFileSync(filePath), { level: 1 });
-      response.writeHead(200, {
-        "Content-Type": contentType(filePath),
-        "Content-Encoding": "gzip",
-        "Content-Length": compressedToolchain.byteLength,
-        "Cache-Control": "no-store",
-        Vary: "Accept-Encoding",
-      });
-      response.end(compressedToolchain);
-      return;
-    }
     response.writeHead(200, {
       "Content-Type": contentType(filePath),
       "Content-Length": stat.size,
@@ -89,6 +98,10 @@ async function run() {
     fs.createReadStream(filePath).pipe(response);
   });
   let browser;
+  let liveTextCreateSyncElapsedMs;
+  let liveTextUpdateSyncElapsedMs;
+  let liveTextDeleteSyncElapsedMs;
+  let terminationSnapshotElapsedMs;
 
   try {
     await new Promise((resolve, reject) => {
@@ -103,6 +116,12 @@ async function run() {
       args: ["--disable-gpu", "--no-first-run"],
     });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    let toolchainResponseHeaders;
+    page.on("response", (response) => {
+      if (/toolchain\/.+\.webc\.gz$/.test(new URL(response.url()).pathname)) {
+        toolchainResponseHeaders = response.headers();
+      }
+    });
     page.on("console", (message) => {
       if (message.type() === "error" || message.type() === "warning") {
         console.log(`[browser:${message.type()}] ${message.text()}`);
@@ -160,20 +179,42 @@ async function run() {
       { timeout: 25_000 },
     );
     await page.locator("[data-terminal-notice]").waitFor({ state: "hidden", timeout: 5_000 });
-    if (!requestedPaths.some((pathname) => /toolchain\/.+\.webc/.test(pathname))) {
-      throw new Error("Clang WebC was not loaded after the UI became ready");
+    if (!requestedPaths.some((pathname) => /toolchain\/.+\.webc\.gz/.test(pathname))) {
+      throw new Error("Compressed Clang WebC was not loaded after the UI became ready");
+    }
+    if (
+      !toolchainResponseHeaders ||
+      toolchainResponseHeaders["content-encoding"] ||
+      Number(toolchainResponseHeaders["content-length"]) !== compressedToolchainSize
+    ) {
+      throw new Error(
+        `Clang WebC was not fetched as the standalone gzip artifact: ${JSON.stringify(toolchainResponseHeaders)}`,
+      );
     }
     if (!requestedPaths.some((pathname) => /clang-format.*\.wasm/.test(pathname))) {
       throw new Error("Clang-format was not loaded with the compiler");
     }
     console.log("[ui-smoke] editor, formatter, and gzip-delivered compiler are ready");
 
+    const standardButton = page.getByRole("button", { name: "选择语言标准" });
+    if ((await standardButton.textContent())?.trim() !== "C23") {
+      throw new Error(`Unexpected default C standard: ${await standardButton.textContent()}`);
+    }
+    await standardButton.click();
+    for (const standard of ["C99", "C11", "C23"]) {
+      await page.getByRole("menuitemradio", { name: standard, exact: true }).waitFor({ state: "visible" });
+    }
+    await page.getByRole("menuitemradio", { name: "C11", exact: true }).click();
+    if ((await standardButton.textContent())?.trim() !== "C11") {
+      throw new Error("C standard selection did not update the toolbar");
+    }
+
     await page.getByRole("button", { name: "选择执行方式" }).click();
     await page.getByRole("menuitemradio", { name: /单次运行/ }).waitFor({ state: "visible" });
     await page.getByRole("menuitemradio", { name: /每 10 秒/ }).waitFor({ state: "visible" });
     await page.keyboard.press("Escape");
 
-    console.log("[ui-smoke] compile and run interactive C23 program");
+    console.log("[ui-smoke] select C11 and run an interactive C program");
     await runButton.click();
     await page.waitForFunction(
       () => document.querySelector(".xterm-rows")?.textContent?.includes("What is your name?"),
@@ -204,6 +245,270 @@ async function run() {
     fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
     await page.screenshot({ path: screenshotPath, fullPage: true });
     const terminalText = await page.locator(".xterm-rows").textContent();
+    if (!terminalText?.includes("C11") || !terminalText.includes("clang 22.1.0")) {
+      throw new Error(`Terminal did not report the selected C standard: ${terminalText}`);
+    }
+
+    console.log("[ui-smoke] create a C++ file, expose six standards, and run C++26");
+    await page.getByRole("button", { name: "更多文件操作" }).click();
+    await page.getByRole("menuitem", { name: "新建 C++ 文件" }).click();
+    const cppDialog = page.getByRole("dialog", { name: "新建 C++ 文件" });
+    await cppDialog.getByRole("button", { name: "创建" }).click();
+    await page.waitForFunction(
+      () => document.querySelector('button[aria-label="选择语言标准"]')?.textContent?.includes("C++23"),
+      undefined,
+      { timeout: 5_000 },
+    );
+    await standardButton.click();
+    for (const standard of ["C++11", "C++14", "C++17", "C++20", "C++23", "C++26"]) {
+      await page.getByRole("menuitemradio", { name: new RegExp(`^${standard.replaceAll("+", "\\+")}`) }).waitFor({ state: "visible" });
+    }
+    await page.getByRole("menuitemradio", { name: /C\+\+26/ }).click();
+    const cppEditorInput = page.locator(".monaco-editor textarea.inputarea").first();
+    await cppEditorInput.focus();
+    await cppEditorInput.press("Control+A");
+    await cppEditorInput.press("Backspace");
+    await page.keyboard.insertText(
+      '#include <print>\n\nint main() {\n    std::println("Hello, {}!", "C++");\n    return 0;\n}\n',
+    );
+    await page.waitForFunction(
+      () => document.querySelector(".monaco-editor .view-lines")?.textContent?.includes("std::println"),
+      undefined,
+      { timeout: 5_000 },
+    );
+    await runButton.click();
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("Hello, C++!"),
+      undefined,
+      { timeout: 25_000 },
+    );
+    await page.getByRole("button", { name: "运行当前文件" }).waitFor({
+      state: "visible",
+      timeout: 10_000,
+    });
+    const cppTerminalText = await page.locator(".xterm-rows").textContent();
+    if (!cppTerminalText?.includes("C++26") || !cppTerminalText.includes("clang++ 22.1.0")) {
+      throw new Error(`Terminal did not report the selected C++ standard: ${cppTerminalText}`);
+    }
+
+    console.log("[ui-smoke] live-sync a C++17-created file while the process is still running");
+    await standardButton.click();
+    await page.getByRole("menuitemradio", { name: /C\+\+17/ }).click();
+    await cppEditorInput.focus();
+    await cppEditorInput.press("Control+A");
+    await cppEditorInput.press("Backspace");
+    await page.keyboard.insertText(
+      '#include <filesystem>\n#include <fstream>\n#include <iostream>\n#include <string>\n#include <system_error>\n\nint main() {\n    std::cout << "ready to create\\n" << std::flush;\n    std::cin.get();\n\n    std::ofstream output("created.txt");\n    output << "created by C++\\n";\n    output.close();\n    if (!output) return 1;\n\n    std::ifstream input("created.txt");\n    std::string line;\n    std::getline(input, line);\n    std::error_code error;\n    const auto size = std::filesystem::file_size("created.txt", error);\n    if ((!input && !input.eof()) || error) return 2;\n\n    std::cout << line << ":" << size << "\\n";\n    std::cout << "waiting for update\\n" << std::flush;\n    std::cin.get();\n\n    std::ofstream("created.txt") << "updated by C++\\n";\n    std::cout << "waiting for delete\\n" << std::flush;\n    std::cin.get();\n\n    if (!std::filesystem::remove("created.txt", error) || error) return 3;\n    std::cout << "waiting for exit\\n" << std::flush;\n    std::cin.get();\n    return 0;\n}\n',
+    );
+    await page.waitForFunction(
+      () => document.querySelector(".monaco-editor .view-lines")?.textContent?.includes("std::filesystem"),
+      undefined,
+      { timeout: 5_000 },
+    );
+    await runButton.click();
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("ready to create"),
+      undefined,
+      { timeout: 25_000 },
+    );
+    await page.locator(".xterm-helper-textarea").click();
+    const liveSyncStartedAt = Date.now();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("waiting for update"),
+      undefined,
+      { timeout: 10_000 },
+    );
+    const createdFileButton = page.locator("aside button").filter({ hasText: "created.txt" }).first();
+    await createdFileButton.waitFor({ state: "visible", timeout: 2_000 });
+    await page.waitForFunction(
+      () => {
+        const stored = localStorage.getItem("mainly.c.workspace.v1");
+        if (!stored) return false;
+        const workspace = JSON.parse(stored);
+        return workspace.files?.some(
+          (file) => file.name === "created.txt" && file.content === "created by C++\n",
+        );
+      },
+      undefined,
+      { timeout: 2_000 },
+    );
+    liveTextCreateSyncElapsedMs = Date.now() - liveSyncStartedAt;
+    if (liveTextCreateSyncElapsedMs > 1_500) {
+      throw new Error(`Live text creation sync took ${liveTextCreateSyncElapsedMs}ms`);
+    }
+    await page.getByRole("button", { name: "终止当前程序" }).waitFor({ state: "visible" });
+    await createdFileButton.click();
+    await page.locator("[data-runtime-text-lock]").waitFor({ state: "visible", timeout: 2_000 });
+    await page.waitForFunction(
+      () => document.querySelector(".monaco-editor textarea.inputarea")?.hasAttribute("readonly"),
+      undefined,
+      { timeout: 2_000 },
+    );
+    if (!(await page.getByRole("button", { name: "created.txt 操作" }).isDisabled())) {
+      throw new Error("Runtime-created text file actions were not locked");
+    }
+    await page.getByRole("button", { name: "更多文件操作" }).click();
+    if ((await page.getByRole("menuitem", { name: "新建文本文件" }).getAttribute("data-disabled")) === null) {
+      throw new Error("Text file creation was not locked while the process was running");
+    }
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function setItemWithOneQuotaFailure(key, value) {
+        if (key === "mainly.c.workspace.v1") {
+          Storage.prototype.setItem = originalSetItem;
+          throw new DOMException("UI smoke quota failure", "QuotaExceededError");
+        }
+        return originalSetItem.call(this, key, value);
+      };
+    });
+    await page.locator(".xterm-helper-textarea").click();
+    const liveUpdateStartedAt = Date.now();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("waiting for delete"),
+      undefined,
+      { timeout: 10_000 },
+    );
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes(
+        "同步失败：浏览器存储空间不足，无法保存工作区",
+      ),
+      undefined,
+      { timeout: 2_000 },
+    );
+    try {
+      await page.waitForFunction(
+        () => (document.querySelector(".monaco-editor .view-lines")?.textContent ?? "")
+          .replaceAll(/\s/g, "")
+          .includes("updatedbyC++"),
+        undefined,
+        { timeout: 2_000 },
+      );
+    } catch (error) {
+      const visibleText = await page.locator(".monaco-editor .view-lines").textContent();
+      throw new Error(`The open text editor did not refresh: ${JSON.stringify(visibleText)}`, {
+        cause: error,
+      });
+    }
+    liveTextUpdateSyncElapsedMs = Date.now() - liveUpdateStartedAt;
+    if (liveTextUpdateSyncElapsedMs > 1_500) {
+      throw new Error(`Live text update sync took ${liveTextUpdateSyncElapsedMs}ms`);
+    }
+    await page.locator("[data-runtime-text-lock]").waitFor({ state: "visible" });
+    await page.locator(".xterm-helper-textarea").click();
+    const liveDeleteStartedAt = Date.now();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("waiting for exit"),
+      undefined,
+      { timeout: 10_000 },
+    );
+    await createdFileButton.waitFor({ state: "hidden", timeout: 2_000 });
+    await page.waitForFunction(
+      () => {
+        const stored = localStorage.getItem("mainly.c.workspace.v1");
+        if (!stored) return false;
+        const workspace = JSON.parse(stored);
+        return !workspace.files?.some((file) => file.name === "created.txt");
+      },
+      undefined,
+      { timeout: 2_000 },
+    );
+    liveTextDeleteSyncElapsedMs = Date.now() - liveDeleteStartedAt;
+    if (liveTextDeleteSyncElapsedMs > 1_500) {
+      throw new Error(`Live text deletion sync took ${liveTextDeleteSyncElapsedMs}ms`);
+    }
+    await page.getByRole("button", { name: "终止当前程序" }).waitFor({ state: "visible" });
+    await page.locator(".xterm-helper-textarea").click();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("已同步 1 个文本文件"),
+      undefined,
+      { timeout: 10_000 },
+    );
+    await page.getByRole("button", { name: "运行当前文件" }).waitFor({
+      state: "visible",
+      timeout: 10_000,
+    });
+    await page.locator("[data-runtime-text-lock]").waitFor({ state: "hidden", timeout: 2_000 });
+    await page.waitForFunction(
+      () => !document.querySelector(".monaco-editor textarea.inputarea")?.hasAttribute("readonly"),
+      undefined,
+      { timeout: 2_000 },
+    );
+
+    console.log("[ui-smoke] capture a final VFS snapshot before Ctrl+C terminates the worker");
+    await page.locator("button").filter({ hasText: "untitled.cpp" }).first().click();
+    await cppEditorInput.focus();
+    await cppEditorInput.press("Control+A");
+    await cppEditorInput.press("Backspace");
+    await page.keyboard.insertText(
+      '#include <fstream>\n#include <iostream>\n\nint main() {\n    std::ofstream("anchor.txt") << "anchor\\n";\n    std::cout << "waiting to write stop file\\n" << std::flush;\n    std::cin.get();\n    std::ofstream("stopped.txt") << "captured before Ctrl+C\\n";\n    std::cout << "stop now\\n" << std::flush;\n    std::cin.get();\n    return 0;\n}\n',
+    );
+    await page.waitForFunction(
+      () => document.querySelector(".monaco-editor .view-lines")?.textContent?.includes("stopped.txt"),
+      undefined,
+      { timeout: 5_000 },
+    );
+    await runButton.click();
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("waiting to write stop file"),
+      undefined,
+      { timeout: 25_000 },
+    );
+    await page.waitForFunction(
+      () => {
+        const stored = localStorage.getItem("mainly.c.workspace.v1");
+        if (!stored) return false;
+        const workspace = JSON.parse(stored);
+        return workspace.files?.some(
+          (file) => file.name === "anchor.txt" && file.content === "anchor\n",
+        );
+      },
+      undefined,
+      { timeout: 2_000 },
+    );
+    await page.locator(".xterm-helper-textarea").click();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("stop now"),
+      undefined,
+      { timeout: 2_000 },
+    );
+    const terminationStartedAt = Date.now();
+    await page.getByRole("button", { name: "终止当前程序" }).click();
+    await page.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("[进程已终止]"),
+      undefined,
+      { timeout: 2_000 },
+    );
+    terminationSnapshotElapsedMs = Date.now() - terminationStartedAt;
+    await page.waitForFunction(
+      () => {
+        const stored = localStorage.getItem("mainly.c.workspace.v1");
+        if (!stored) return false;
+        const workspace = JSON.parse(stored);
+        return workspace.files?.some(
+          (file) => file.name === "stopped.txt" && file.content === "captured before Ctrl+C\n",
+        );
+      },
+      undefined,
+      { timeout: 2_000 },
+    );
+    await page.getByRole("button", { name: "运行当前文件" }).waitFor({ state: "visible" });
+    await page.getByRole("tab", { name: "编译日志" }).click();
+    await page.getByText("worker:terminate-snapshot", { exact: true }).waitFor({
+      state: "visible",
+      timeout: 2_000,
+    });
+    await page.locator("button").filter({ hasText: "main.c" }).first().click();
+    await page.waitForFunction(
+      () => document.querySelector('button[aria-label="选择语言标准"]')?.textContent?.includes("C11"),
+      undefined,
+      { timeout: 5_000 },
+    );
 
     const editorInput = page.locator(".monaco-editor textarea.inputarea").first();
     await editorInput.focus();
@@ -218,7 +523,12 @@ async function run() {
       undefined,
       { timeout: 5_000 },
     );
-    await page.locator("section svg.lucide-circle").waitFor({ state: "visible", timeout: 5_000 });
+    const mainFileDirtyIndicator = page
+      .locator("section button")
+      .filter({ hasText: "main.c" })
+      .first()
+      .locator('svg[aria-label="未保存"]');
+    await mainFileDirtyIndicator.waitFor({ state: "visible", timeout: 5_000 });
     const invalidDraftWasPersisted = await page.evaluate(() => {
       const stored = localStorage.getItem("mainly.c.workspace.v1");
       if (!stored) return false;
@@ -263,7 +573,7 @@ async function run() {
     await editorInput.press("Control+A");
     await editorInput.press("Backspace");
     await page.keyboard.insertText(unformatted);
-    await page.locator("section svg.lucide-circle").waitFor({ state: "visible", timeout: 5_000 });
+    await mainFileDirtyIndicator.waitFor({ state: "visible", timeout: 5_000 });
     const unformattedDraftWasPersisted = await page.evaluate((expected) => {
       const stored = localStorage.getItem("mainly.c.workspace.v1");
       if (!stored) return false;
@@ -285,16 +595,16 @@ async function run() {
       formattedFragment,
       { timeout: 10_000 },
     );
-    await page.locator("section svg.lucide-x").waitFor({ state: "visible", timeout: 5_000 });
+    await page.locator("section svg.lucide-x").first().waitFor({ state: "visible", timeout: 5_000 });
 
-    const toolchainRequestCount = requestedPaths.filter((pathname) => /toolchain\/.+\.webc/.test(pathname)).length;
+    const toolchainRequestCount = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.gz/.test(pathname)).length;
     if (toolchainRequestCount !== 1) {
       throw new Error(`Expected one initial Clang WebC request, received ${toolchainRequestCount}`);
     }
     await page.reload({ waitUntil: "domcontentloaded", timeout: 20_000 });
     await page.locator(".monaco-editor").waitFor({ state: "visible", timeout: 20_000 });
     await page.locator("[data-terminal-notice]").waitFor({ state: "hidden", timeout: 25_000 });
-    const requestsAfterReload = requestedPaths.filter((pathname) => /toolchain\/.+\.webc/.test(pathname)).length;
+    const requestsAfterReload = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.gz/.test(pathname)).length;
     if (requestsAfterReload !== toolchainRequestCount) {
       throw new Error("Clang WebC was downloaded again instead of being read from Cache Storage");
     }
@@ -305,9 +615,14 @@ async function run() {
         {
           crossOriginIsolated: true,
           editor: "monaco",
-          standard: "C23",
+          standards: "C99/C11/C23 + C++11/14/17/20/23/26",
+          println: "passed",
+          filesystemSync: `100ms create/update/delete passed (${liveTextCreateSyncElapsedMs}/${liveTextUpdateSyncElapsedMs}/${liveTextDeleteSyncElapsedMs}ms)`,
+          terminationSnapshot: `Ctrl+C final snapshot passed (${terminationSnapshotElapsedMs}ms)`,
+          syncErrorVisibility: "quota failure reported and recovered",
           base: siteBase,
           compilerLazyLoad: true,
+          compressedToolchainBytes: compressedToolchainSize,
           terminal: terminalText?.replaceAll(/\s+/g, " ").trim(),
           errorLens: errorLensText,
           formatOnSave: "passed",

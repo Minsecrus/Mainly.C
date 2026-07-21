@@ -1,0 +1,96 @@
+diff --git a/libc-bottom-half/cloudlibc/src/libc/fcntl/fcntl.c b/libc-bottom-half/cloudlibc/src/libc/fcntl/fcntl.c
+--- a/libc-bottom-half/cloudlibc/src/libc/fcntl/fcntl.c
++++ b/libc-bottom-half/cloudlibc/src/libc/fcntl/fcntl.c
+@@ -9,30 +9,12 @@
+ 
+ int fcntl(int fildes, int cmd, ...) {
+   switch (cmd) {
+-    case F_GETFD: {
+-      __wasi_fdflagsext_t flags;
+-      __wasi_errno_t error = __wasi_fd_fdflags_get(fildes, &flags);
+-      if (error != 0) {
+-        errno = error;
+-        return -1;
+-      }
+-      return flags & __WASI_FDFLAGSEXT_CLOEXEC ? FD_CLOEXEC : 0;
+-    }
+-    case F_SETFD: {
+-      va_list ap;
+-      va_start(ap, cmd);
+-      int flags = va_arg(ap, int);
+-      va_end(ap);
+-
+-      __wasi_fdflagsext_t fd_flags = flags | FD_CLOEXEC ? __WASI_FDFLAGSEXT_CLOEXEC : 0;
+-      __wasi_errno_t error =
+-          __wasi_fd_fdflags_set(fildes, fd_flags);
+-      if (error != 0) {
+-        errno = error;
+-        return -1;
+-      }
++    case F_GETFD:
++      // SDK 0.8 has no fd_fdflags_get import. Match the older WASIX libc.
++      return FD_CLOEXEC;
++    case F_SETFD:
++      // SDK 0.8 has no fd_fdflags_set import. Close-on-exec is ignored.
+       return 0;
+-    }
+     case F_GETFL: {
+       // Obtain the flags and the rights of the descriptor.
+       __wasi_fdstat_t fds;
+@@ -75,14 +59,8 @@ int fcntl(int fildes, int cmd, ...) {
+     }
+     case F_DUPFD:
+     case F_DUPFD_CLOEXEC: {
+-      va_list ap;
+-      va_start(ap, cmd);
+-      int min_res_fd = va_arg(ap, int);
+-      va_end(ap);
+-
+       int fd;
+-      __wasi_bool_t cloexec = cmd == F_DUPFD_CLOEXEC;
+-      __wasi_errno_t error = __wasi_fd_dup2(fildes, min_res_fd, cloexec, &fd);
++      __wasi_errno_t error = __wasi_fd_dup(fildes, &fd);
+       if (error != 0) {
+         errno = error;
+         return -1;
+diff --git a/libc-bottom-half/cloudlibc/src/libc/fcntl/openat.c b/libc-bottom-half/cloudlibc/src/libc/fcntl/openat.c
+--- a/libc-bottom-half/cloudlibc/src/libc/fcntl/openat.c
++++ b/libc-bottom-half/cloudlibc/src/libc/fcntl/openat.c
+@@ -20,8 +20,6 @@ static_assert(O_DIRECTORY >> 12 == __WASI_OFLAGS_DIRECTORY, "Value mismatch");
+ static_assert(O_EXCL >> 12 == __WASI_OFLAGS_EXCL, "Value mismatch");
+ static_assert(O_TRUNC >> 12 == __WASI_OFLAGS_TRUNC, "Value mismatch");
+ 
+-static_assert(O_CLOEXEC >> 30 == __WASI_FDFLAGSEXT_CLOEXEC, "Value mismatch");
+-
+ int __wasilibc_nocwd_openat_nomode(int fd, const char *path, int oflag) {
+   // Compute rights corresponding with the access modes provided.
+   // Attempt to obtain all rights, except the ones that contradict the
+@@ -67,14 +65,13 @@ int __wasilibc_nocwd_openat_nomode(int fd, const char *path, int oflag) {
+ 
+   // Open file with appropriate rights.
+   __wasi_fdflags_t fs_flags = oflag & 0xfff;
+-  __wasi_fdflagsext_t fd_flags = (oflag >> 30) & 0x03;
+   __wasi_rights_t fs_rights_base = max & fsb_cur.fs_rights_inheriting;
+   __wasi_rights_t fs_rights_inheriting = fsb_cur.fs_rights_inheriting;
+   __wasi_fd_t newfd;
+-  error = __wasi_path_open2(fd, lookup_flags, path,
++  error = __wasi_path_open(fd, lookup_flags, path,
+                                  (oflag >> 12) & 0xfff,
+                                  fs_rights_base, fs_rights_inheriting, fs_flags,
+-                                 fd_flags, &newfd);
++                                 &newfd);
+   if (error != 0) {
+     errno = error;
+     return -1;
+diff --git a/libc-top-half/musl/src/exit/_Exit.c b/libc-top-half/musl/src/exit/_Exit.c
+--- a/libc-top-half/musl/src/exit/_Exit.c
++++ b/libc-top-half/musl/src/exit/_Exit.c
+@@ -12,7 +12,7 @@ _Noreturn void _Exit(int ec) {
+     __syscall(SYS_exit, ec);
+ #else
+   for (;;) {
+-    __wasi_proc_exit2(ec);
++    __wasi_proc_exit(ec);
+ #ifdef __wasm_exception_handling__
+     extern _Noreturn void __vfork_restore();
+     __vfork_restore();

@@ -6,10 +6,8 @@ import "monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
 import type { ClangDiagnostic } from "../compiler/diagnostics.js";
-import {
-  isCSourceFileName,
-  type SourceFile,
-} from "../features/files/useLocalFiles.js";
+import type { SourceFile } from "../features/files/useLocalFiles.js";
+import { sourceLanguageForFileName } from "../languages.js";
 import { registerCCompletions } from "./cCompletions.js";
 
 type StandaloneEditor = localMonaco.editor.IStandaloneCodeEditor;
@@ -17,6 +15,7 @@ type StandaloneEditor = localMonaco.editor.IStandaloneCodeEditor;
 interface CodeEditorProps {
   file: SourceFile;
   diagnostics: ClangDiagnostic[];
+  readOnly?: boolean;
   onChange: (value: string) => void;
   onReady: (editor: StandaloneEditor) => void;
 }
@@ -106,6 +105,7 @@ function markerSeverity(monaco: Monaco, diagnostic: ClangDiagnostic): number {
 export function CodeEditor({
   file,
   diagnostics,
+  readOnly = false,
   onChange,
   onReady,
 }: CodeEditorProps) {
@@ -200,12 +200,14 @@ export function CodeEditor({
       key={file.id}
       height="100%"
       path={`file:///${file.name}`}
-      language={isCSourceFileName(file.name) ? "c" : "plaintext"}
+      language={sourceLanguageForFileName(file.name) ?? "plaintext"}
       theme="mainly-monochrome"
       value={file.content}
       beforeMount={configureMonaco}
       onMount={handleMount}
-      onChange={(value) => onChange(value ?? "")}
+      onChange={(value) => {
+        if (!readOnly) onChange(value ?? "");
+      }}
       loading={
         <div className="flex h-full items-center justify-center bg-[#121212] text-xs text-neutral-300">
           正在载入编辑器…
@@ -213,6 +215,9 @@ export function CodeEditor({
       }
       options={{
         automaticLayout: true,
+        readOnly,
+        domReadOnly: readOnly,
+        readOnlyMessage: { value: "程序运行期间，文本文件由虚拟文件系统管理并保持只读。" },
         editContext: false,
         fontFamily: "'Monaspace Neon', 'HarmonyOS Sans SC', ui-monospace, monospace",
         fontSize: 14,

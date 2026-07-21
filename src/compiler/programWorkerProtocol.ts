@@ -27,16 +27,24 @@ export interface ProgramWorkerWaitMessage {
   type: "wait";
 }
 
+export interface ProgramWorkerTerminateMessage {
+  type: "terminate";
+}
+
 export type ProgramWorkerRequest =
   | ProgramWorkerStartMessage
   | ProgramWorkerInputMessage
   | ProgramWorkerCloseInputMessage
-  | ProgramWorkerWaitMessage;
+  | ProgramWorkerWaitMessage
+  | ProgramWorkerTerminateMessage;
 
 export type ProgramWorkerResponse =
   | { type: "ready" }
   | { type: "stdout"; data: ArrayBuffer }
   | { type: "stderr"; data: ArrayBuffer }
+  | { type: "virtual-files"; virtualFiles: VirtualTextFileMap }
+  | { type: "virtual-files-error"; message: string }
+  | { type: "terminate-result"; virtualFiles: VirtualTextFileMap; error?: string }
   | { type: "stdin-result"; requestId: number; error?: string }
   | { type: "exit"; code: number; ok: boolean; virtualFiles: VirtualTextFileMap }
   | { type: "error"; phase: string; message: string; stack?: string };

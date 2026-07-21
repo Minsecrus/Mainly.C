@@ -14,7 +14,7 @@ if (-not $WasmerPath) {
     $WasmerPath = Join-Path $repositoryRoot '.tools\wasmer\v7.2.0\bin\wasmer.exe'
 }
 if (-not $WebcPath) {
-    $WebcPath = Join-Path $repositoryRoot 'dist\mainly-c-clang-22.1.0-1.webc'
+    $WebcPath = Join-Path $repositoryRoot 'dist\mainly-c-clang-22.1.0-4.webc'
 }
 
 $env:WASMER_PATH = [System.IO.Path]::GetFullPath($WasmerPath)

@@ -8,9 +8,11 @@ import {
 import { DropdownMenu } from "radix-ui";
 
 import type { RunConfiguration } from "../../features/run/runConfiguration.js";
+import type { LanguageStandard, SourceLanguage } from "../../languages.js";
 import type { AutoRunInterval, RunState } from "../../types/ui.js";
 import { IconButton } from "../ui/IconButton.js";
 import { MenuItem, MenuSeparator, menuContentClass } from "../ui/Menu.js";
+import { LanguageStandardControl } from "./LanguageStandardControl.js";
 import { RunControl } from "./RunControl.js";
 
 interface TopBarProps {
@@ -18,10 +20,14 @@ interface TopBarProps {
   runDisabled?: boolean;
   autoRunInterval: AutoRunInterval;
   runConfiguration: RunConfiguration;
+  sourceLanguage?: SourceLanguage;
+  languageStandard?: LanguageStandard;
+  languageStandardDisabled?: boolean;
   onRun: () => void;
   onStop: () => void;
   onAutoRunIntervalChange: (interval: AutoRunInterval) => void;
   onRunConfigurationChange: (configuration: RunConfiguration) => void;
+  onLanguageStandardChange: (standard: LanguageStandard) => void;
   onClearOutput: () => void;
   onResetLayout: () => void;
   onShowShortcuts: () => void;
@@ -33,10 +39,14 @@ export function TopBar({
   runDisabled = false,
   autoRunInterval,
   runConfiguration,
+  sourceLanguage,
+  languageStandard,
+  languageStandardDisabled = false,
   onRun,
   onStop,
   onAutoRunIntervalChange,
   onRunConfigurationChange,
+  onLanguageStandardChange,
   onClearOutput,
   onResetLayout,
   onShowShortcuts,
@@ -49,6 +59,13 @@ export function TopBar({
       </div>
 
       <div className="ml-auto flex items-center gap-1.5">
+        <LanguageStandardControl
+          language={sourceLanguage}
+          standard={languageStandard}
+          disabled={languageStandardDisabled}
+          onChange={onLanguageStandardChange}
+        />
+
         <RunControl
           runState={runState}
           disabled={runDisabled}

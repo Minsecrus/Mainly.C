@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  isSourceCodeFileName,
+  sourceLanguageForFileName,
+  type SourceLanguage,
+} from "../../languages.js";
+
 export interface SourceFile {
   id: string;
   name: string;
   content: string;
 }
 
-export type SourceFileKind = "c" | "text";
+export type SourceFileKind = SourceLanguage | "text";
 
 export interface RuntimeTextFileSyncResult {
   added: string[];
   updated: string[];
-  conflicts: string[];
+  removed: string[];
 }
 
 interface StoredWorkspace {
@@ -72,13 +78,17 @@ function loadWorkspace(): StoredWorkspace {
 }
 
 export function isCSourceFileName(name: string): boolean {
-  return name.toLowerCase().endsWith(".c");
+  return sourceLanguageForFileName(name) === "c";
+}
+
+export function isCppSourceFileName(name: string): boolean {
+  return sourceLanguageForFileName(name) === "cpp";
 }
 
 export function isSupportedSourceFileName(name: string): boolean {
   if (!name || name.includes("/") || name.includes("\\")) return false;
   const lowerName = name.toLowerCase();
-  if (lowerName.endsWith(".c")) return lowerName !== ".c";
+  if (isSourceCodeFileName(lowerName)) return !lowerName.startsWith(".");
   if (lowerName.endsWith(".txt")) return lowerName !== ".txt";
   return false;
 }
@@ -90,12 +100,14 @@ export function normalizeSourceFileName(
   const trimmed = value.trim().replaceAll(/[/\\]/g, "-");
   if (!trimmed) throw new Error("请输入文件名");
   const lowerName = trimmed.toLowerCase();
-  if (lowerName.endsWith(".c") || lowerName.endsWith(".txt")) {
-    if (lowerName === ".c" || lowerName === ".txt") throw new Error("请输入文件名");
+  if (isSupportedSourceFileName(trimmed)) {
     return trimmed;
   }
-  if (/\.[^.]+$/.test(trimmed)) throw new Error("仅支持 .c 和 .txt 文件");
-  return `${trimmed}.${defaultKind === "c" ? "c" : "txt"}`;
+  if (/\.[^.]+$/.test(trimmed)) {
+    throw new Error("仅支持 .c、.cpp、.cc、.cxx 和 .txt 文件");
+  }
+  const extension = defaultKind === "cpp" ? "cpp" : defaultKind === "c" ? "c" : "txt";
+  return `${trimmed}.${extension}`;
 }
 
 export function useLocalFiles() {
@@ -144,7 +156,18 @@ export function useLocalFiles() {
         content: nextSavedContents[file.id] ?? file.content,
       })),
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(storedWorkspace));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(storedWorkspace));
+    } catch (cause) {
+      const quotaExceeded = cause instanceof DOMException &&
+        (cause.name === "QuotaExceededError" || cause.name === "NS_ERROR_DOM_QUOTA_REACHED");
+      throw new Error(
+        quotaExceeded
+          ? "浏览器存储空间不足，无法保存工作区"
+          : `无法保存浏览器工作区：${cause instanceof Error ? cause.message : String(cause)}`,
+        { cause },
+      );
+    }
   }
 
   function applyCommittedWorkspace(
@@ -187,8 +210,10 @@ export function useLocalFiles() {
       id: crypto.randomUUID(),
       name,
       content: isCSourceFileName(name)
-        ? `#include <stdio.h>\n\nint main(void) {\n    puts("Hello, C23!");\n    return 0;\n}\n`
-        : "",
+        ? `#include <stdio.h>\n\nint main(void) {\n    puts("Hello, C!");\n    return 0;\n}\n`
+        : isCppSourceFileName(name)
+          ? `#include <iostream>\n\nint main() {\n    std::cout << "Hello, C++!\\n";\n    return 0;\n}\n`
+          : "",
     };
     const next = {
       files: [...current.files, file],
@@ -201,10 +226,10 @@ export function useLocalFiles() {
   function renameFile(id: string, rawName: string): void {
     const current = workspaceRef.current;
     const currentFile = current.files.find((file) => file.id === id);
-    const name = normalizeSourceFileName(
-      rawName,
-      currentFile && !isCSourceFileName(currentFile.name) ? "text" : "c",
-    );
+    const currentLanguage = currentFile
+      ? sourceLanguageForFileName(currentFile.name)
+      : undefined;
+    const name = normalizeSourceFileName(rawName, currentLanguage ?? "text");
     if (
       current.files.some(
         (file) => file.id !== id && file.name.toLowerCase() === name.toLowerCase(),
@@ -246,11 +271,11 @@ export function useLocalFiles() {
   function clearNonCodeFiles(): string[] {
     const current = workspaceRef.current;
     const removedIds = current.files
-      .filter((file) => !isCSourceFileName(file.name))
+      .filter((file) => !isSourceCodeFileName(file.name))
       .map((file) => file.id);
     if (removedIds.length === 0) return removedIds;
 
-    const codeFiles = current.files.filter((file) => isCSourceFileName(file.name));
+    const codeFiles = current.files.filter((file) => isSourceCodeFileName(file.name));
     const next = codeFiles.length > 0
       ? {
           files: codeFiles,
@@ -305,59 +330,57 @@ export function useLocalFiles() {
 
   function syncRuntimeTextFiles(
     runtimeFiles: Readonly<Record<string, string>>,
-    baselineFiles: Readonly<Record<string, string>>,
   ): RuntimeTextFileSyncResult {
-    const result: RuntimeTextFileSyncResult = { added: [], updated: [], conflicts: [] };
+    const result: RuntimeTextFileSyncResult = { added: [], updated: [], removed: [] };
     const current = workspaceRef.current;
-    const baselineByName = new Map(
-      Object.entries(baselineFiles).map(([name, content]) => [name.toLowerCase(), content]),
+    const runtimeByName = new Map(
+      Object.entries(runtimeFiles)
+        .filter(([name]) => isSupportedSourceFileName(name) && !isSourceCodeFileName(name))
+        .map(([name, content]) => [name.toLowerCase(), { name, content }]),
     );
-    const nextFiles = [...current.files];
-    const savedUpdates: Record<string, string> = {};
+    const nextFiles: SourceFile[] = [];
+    const nextSavedContents = { ...savedContentsRef.current };
 
-    for (const [name, content] of Object.entries(runtimeFiles)) {
-      if (!isSupportedSourceFileName(name) || isCSourceFileName(name)) continue;
-      const lowerName = name.toLowerCase();
-      const baselineHasFile = baselineByName.has(lowerName);
-      const baselineContent = baselineByName.get(lowerName);
-      const existingIndex = nextFiles.findIndex(
-        (file) => file.name.toLowerCase() === lowerName,
-      );
-
-      if (existingIndex < 0) {
-        if (baselineHasFile) {
-          if (content !== baselineContent) result.conflicts.push(name);
-          continue;
-        }
-        const file: SourceFile = { id: crypto.randomUUID(), name, content };
+    for (const file of current.files) {
+      if (isSourceCodeFileName(file.name)) {
         nextFiles.push(file);
-        savedUpdates[file.id] = content;
-        result.added.push(name);
         continue;
       }
 
-      const existing = nextFiles[existingIndex];
-      if (!baselineHasFile) {
-        if (existing.content !== content) result.conflicts.push(name);
+      const runtimeFile = runtimeByName.get(file.name.toLowerCase());
+      if (!runtimeFile) {
+        delete nextSavedContents[file.id];
+        result.removed.push(file.name);
         continue;
       }
-      if (content === baselineContent || existing.content === content) continue;
-      if (existing.content !== baselineContent) {
-        result.conflicts.push(name);
-        continue;
-      }
+      runtimeByName.delete(file.name.toLowerCase());
 
-      nextFiles[existingIndex] = { ...existing, content };
-      savedUpdates[existing.id] = content;
-      result.updated.push(existing.name);
+      if (file.name !== runtimeFile.name || file.content !== runtimeFile.content) {
+        nextFiles.push({ ...file, ...runtimeFile });
+        nextSavedContents[file.id] = runtimeFile.content;
+        result.updated.push(runtimeFile.name);
+      } else {
+        nextFiles.push(file);
+      }
     }
 
-    if (result.added.length > 0 || result.updated.length > 0) {
-      const nextWorkspace = { ...current, files: nextFiles };
-      applyCommittedWorkspace(nextWorkspace, {
-        ...savedContentsRef.current,
-        ...savedUpdates,
-      });
+    for (const runtimeFile of runtimeByName.values()) {
+      const file: SourceFile = { id: crypto.randomUUID(), ...runtimeFile };
+      nextFiles.push(file);
+      nextSavedContents[file.id] = file.content;
+      result.added.push(file.name);
+    }
+
+    if (result.added.length > 0 || result.updated.length > 0 || result.removed.length > 0) {
+      if (nextFiles.length === 0) {
+        const fallback = starterWorkspace();
+        applyCommittedWorkspace(fallback, contentSnapshot(fallback.files));
+      } else {
+        const activeFileId = nextFiles.some((file) => file.id === current.activeFileId)
+          ? current.activeFileId
+          : nextFiles[0].id;
+        applyCommittedWorkspace({ files: nextFiles, activeFileId }, nextSavedContents);
+      }
     }
     return result;
   }

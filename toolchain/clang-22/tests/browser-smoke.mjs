@@ -14,10 +14,10 @@ const typescriptPath = path.join(repositoryRoot, "node_modules", "typescript", "
 const sdkWorkerPath = fs.existsSync(path.join(sdkRoot, "worker.mjs"))
   ? path.join(sdkRoot, "worker.mjs")
   : path.join(sdkRoot, "index.mjs");
-const webcPath = path.join(
+const webcPath = process.env.CLANG_WEBC || path.join(
   repositoryRoot,
   "dist",
-  "mainly-c-clang-22.1.0-1.webc",
+  "mainly-c-clang-22.1.0-4.webc",
 );
 const chromePath =
   process.env.CHROME_PATH ||
@@ -45,8 +45,14 @@ const routes = new Map([
   ["/compiler/runtimeProtocol.js", path.join(compilerRoot, "runtimeProtocol.js")],
   ["/compiler/types.js", path.join(compilerRoot, "types.js")],
   ["/compiler/virtualFilesystem.js", path.join(compilerRoot, "virtualFilesystem.js")],
+  ["/languages.js", path.join(repositoryRoot, ".cache", "browser-adapter", "languages.js")],
   ["/clang.webc", webcPath],
   ["/fixtures/c23-smoke.c", path.join(scriptDirectory, "c23-smoke.c")],
+  ["/fixtures/c23-library.c", path.join(scriptDirectory, "c23-library.c")],
+  ["/fixtures/language-standard.c", path.join(scriptDirectory, "language-standard.c")],
+  ["/fixtures/language-standard.cpp", path.join(scriptDirectory, "language-standard.cpp")],
+  ["/fixtures/filesystem-smoke.cpp", path.join(scriptDirectory, "filesystem-smoke.cpp")],
+  ["/fixtures/print-smoke.cpp", path.join(scriptDirectory, "print-smoke.cpp")],
   ["/fixtures/interactive.c", path.join(scriptDirectory, "interactive.c")],
   ["/fixtures/run-configuration.c", path.join(scriptDirectory, "run-configuration.c")],
   ["/fixtures/diagnostic-error.c", path.join(scriptDirectory, "diagnostic-error.c")],
@@ -63,7 +69,7 @@ function contentType(filePath) {
   if (filePath.endsWith(".mjs")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".wasm")) return "application/wasm";
-  if (filePath.endsWith(".c")) return "text/plain; charset=utf-8";
+  if (filePath.endsWith(".c") || filePath.endsWith(".cpp")) return "text/plain; charset=utf-8";
   return "application/octet-stream";
 }
 
@@ -128,38 +134,54 @@ try {
     headless: true,
     args: ["--disable-gpu", "--no-first-run"],
   });
-  const page = await browser.newPage();
-  page.on("console", (message) => console.log(`[browser:${message.type()}] ${message.text()}`));
-  page.on("pageerror", (error) => console.error(`[browser:error] ${error.stack || error}`));
-
-  await page.goto(`http://127.0.0.1:${address.port}/`, {
-    waitUntil: "domcontentloaded",
-    timeout: 60_000,
-  });
-  try {
-    await page.waitForFunction(
-      () => document.title === "PASS" || document.title === "FAIL",
-      undefined,
-      { timeout: 60_000 },
+  const requestedScope = process.env.BROWSER_SCOPE;
+  const scopes = requestedScope && requestedScope !== "all"
+    ? [requestedScope]
+    : ["c23", "cpp", "runtime"];
+  for (const scope of scopes) {
+    const scopeStartedAt = Date.now();
+    const page = await browser.newPage();
+    page.on("console", (message) =>
+      console.log(`[browser:${scope}:${message.type()}] ${message.text()}`),
     );
-  } catch (error) {
-    const title = await page.title();
-    const resultText = await page
-      .locator("#result")
-      .textContent({ timeout: 1_000 })
-      .catch(() => "result element unavailable");
-    throw new Error(
-      `Browser smoke test timed out in ${title}:\n${resultText}\n${error}`,
+    page.on("pageerror", (error) =>
+      console.error(`[browser:${scope}:error] ${error.stack || error}`),
     );
-  }
+    try {
+      const testUrl = `http://127.0.0.1:${address.port}/?scope=${encodeURIComponent(scope)}`;
+      await page.goto(testUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: 60_000,
+      });
+      try {
+        await page.waitForFunction(
+          () => document.title === "PASS" || document.title === "FAIL",
+          undefined,
+          { timeout: 60_000 },
+        );
+      } catch (error) {
+        const title = await page.title();
+        const resultText = await page
+          .locator("#result")
+          .textContent({ timeout: 1_000 })
+          .catch(() => "result element unavailable");
+        throw new Error(
+          `Browser smoke test scope ${scope} timed out in ${title}:\n${resultText}\n${error}`,
+        );
+      }
 
-  const title = await page.title();
-  const resultText = await page.locator("#result").textContent();
-  if (title !== "PASS") {
-    throw new Error(`Browser smoke test failed:\n${resultText}`);
+      const title = await page.title();
+      const resultText = await page.locator("#result").textContent();
+      if (title !== "PASS") {
+        throw new Error(`Browser smoke test scope ${scope} failed:\n${resultText}`);
+      }
+      console.log(`[browser:${scope}] completed in ${Date.now() - scopeStartedAt}ms`);
+      console.log(resultText);
+    } finally {
+      await page.close();
+    }
   }
-  console.log(`[browser] completed in ${Date.now() - testStartedAt}ms`);
-  console.log(resultText);
+  console.log(`[browser] all scopes completed in ${Date.now() - testStartedAt}ms`);
 } finally {
   if (browser) await browser.close();
   await new Promise((resolve) => server.close(resolve));

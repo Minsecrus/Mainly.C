@@ -1,7 +1,7 @@
 {
   "package": {
     "name": "mainly-c/clang-22",
-    "version": "22.1.0-1"
+    "version": "22.1.0-4"
   },
   "compiler": {
     "name": "Clang",
@@ -20,8 +20,44 @@
     "source": "https://wasmer.io/clang/clang@0.160000.1",
     "package": "clang/clang",
     "version": "0.160000.1",
-    "contents": "WASIX sysroot and compiler-rt builtins only",
+    "contents": "bootstrap WASIX sysroot, browser-compatible startup objects, and compiler-rt builtins; its libc and libc++ headers and archives are replaced during package assembly",
     "webcSha256": "c127b7bfc0041d02c94045f40be7fb4b3eeb98cede25fad96261b7b90a82f405"
+  },
+  "interactiveLibc": {
+    "name": "WASIX libc",
+    "version": "v2026-07-03.1",
+    "source": "https://github.com/wasix-org/wasix-libc",
+    "commit": "09503b230e8acc721c1e013ca28a41bf149e4ee2",
+    "wasiHeadersCommit": "bac366c8aeb69cacfea6c4c04a503191bf1cede1",
+    "wasixHeadersCommit": "0dfbd35a0f30f3fe7fd3b3ab5a50dc4191d5caed",
+    "hostCompiler": "LLVM 22.1.0 Windows release",
+    "hostCompilerInstallerSha256": "b31d5f54942e017cb878e594529723dd629cc7b54c9bf7a331e2dc01e8ea5e75",
+    "makeVersion": "4.4.1",
+    "makeExecutableSha256": "368df1dcb3d768cda767809c21e4084c3398c9c9817f5819a8851e95782b44a5",
+    "target": "wasm32-wasip1",
+    "threadModel": "posix",
+    "wasmFeatures": ["atomics", "bulk-memory", "mutable-globals"],
+    "compatibilityPatch": "toolchain/clang-22/patches/wasix-libc-browser-sdk08.patch",
+    "compatibilityPatchReason": "use standard WASI proc_exit/path_open and the legacy WASIX fd_dup ABI because Wasmer SDK 0.8 browsers do not support the newer imports",
+    "c23Library": "partial",
+    "statvfs": "present; WASIX implementation returns ENOTSUP",
+    "startupObjects": "retained from clang/clang@0.160000.1 because the newer startup objects require WASIX signal imports unavailable in Wasmer SDK 0.8 browsers"
+  },
+  "interactiveLibcxx": {
+    "name": "libc++ and libc++abi",
+    "version": "22.1.0",
+    "source": "https://codeberg.org/YoWASP/llvm-project",
+    "commit": "9560ae0f2cc440e4fc891fddbc119da6f56daa59",
+    "hostCompiler": "LLVM 22.1.0 Windows release",
+    "hostCompilerInstallerSha256": "b31d5f54942e017cb878e594529723dd629cc7b54c9bf7a331e2dc01e8ea5e75",
+    "target": "wasm32-wasip1",
+    "threadApi": "pthread",
+    "wasmFeatures": ["atomics", "bulk-memory", "mutable-globals"],
+    "exceptions": false,
+    "filesystem": true,
+    "filesystemLimitations": [
+      "std::filesystem::space reports ENOTSUP because WASIX statvfs is a stub"
+    ]
   },
   "bootstrapArtifact": {
     "name": "@yowasp/clang",

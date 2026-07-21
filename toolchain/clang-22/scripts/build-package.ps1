@@ -2,6 +2,10 @@
 param(
     [string]$WasmerPath,
     [string]$OutputPath,
+    [string]$LlvmRoot,
+    [string]$CMakePath,
+    [string]$NinjaPath,
+    [string]$LibcxxSourceRoot,
     [switch]$SkipPrepare
 )
 
@@ -18,7 +22,7 @@ if (-not $WasmerPath) {
 $WasmerPath = [System.IO.Path]::GetFullPath($WasmerPath)
 
 if (-not $OutputPath) {
-    $OutputPath = Join-Path $repositoryRoot 'dist\mainly-c-clang-22.1.0-1.webc'
+    $OutputPath = Join-Path $repositoryRoot 'dist\mainly-c-clang-22.1.0-4.webc'
 }
 $OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
 
@@ -27,7 +31,22 @@ if (-not (Test-Path -LiteralPath $WasmerPath)) {
 }
 
 if (-not $SkipPrepare) {
-    & (Join-Path $PSScriptRoot 'prepare-package.ps1') -WasmerPath $WasmerPath
+    $prepareArguments = @{
+        WasmerPath = $WasmerPath
+    }
+    if ($LlvmRoot) {
+        $prepareArguments.LlvmRoot = $LlvmRoot
+    }
+    if ($CMakePath) {
+        $prepareArguments.CMakePath = $CMakePath
+    }
+    if ($NinjaPath) {
+        $prepareArguments.NinjaPath = $NinjaPath
+    }
+    if ($LibcxxSourceRoot) {
+        $prepareArguments.LibcxxSourceRoot = $LibcxxSourceRoot
+    }
+    & (Join-Path $PSScriptRoot 'prepare-package.ps1') @prepareArguments
 }
 
 $outputDirectory = Split-Path -Parent $OutputPath

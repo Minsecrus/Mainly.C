@@ -24,7 +24,7 @@ export interface TerminalProcess {
   readonly stdout: ReadableStream<Uint8Array>;
   readonly stderr: ReadableStream<Uint8Array>;
   wait(): Promise<TerminalProcessOutput>;
-  terminate(): void;
+  terminate(): Promise<void>;
 }
 
 export class TerminalTerminatedError extends Error {
@@ -63,6 +63,7 @@ export class InteractiveTerminalSession {
   #stderr = "";
   #stderrDisplayPending = "";
   #finishPromise?: Promise<TerminalResult>;
+  #terminatePromise?: Promise<void>;
   #inputReleased = false;
   #terminated = false;
 
@@ -124,8 +125,9 @@ export class InteractiveTerminalSession {
     await this.#stdinWriter.close();
   }
 
-  terminate(): void {
-    if (this.#terminated || this.#inputReleased) return;
+  terminate(): Promise<void> {
+    if (this.#terminatePromise) return this.#terminatePromise;
+    if (this.#terminated || this.#inputReleased) return Promise.resolve();
     this.#log("terminal:terminate");
     this.#terminated = true;
     this.#inputReleased = true;
@@ -133,8 +135,10 @@ export class InteractiveTerminalSession {
     for (const waiter of [...this.#waiters]) waiter.reject(error);
     this.#waiters.clear();
     this.#stdinWriter.releaseLock();
-    this.#process.terminate();
-    this.#log("terminal:terminated");
+    this.#terminatePromise = this.#process.terminate().then(() => {
+      this.#log("terminal:terminated");
+    });
+    return this.#terminatePromise;
   }
 
   waitForOutput(expected: string, timeoutMs = 30_000): Promise<void> {

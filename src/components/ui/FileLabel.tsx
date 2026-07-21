@@ -1,4 +1,5 @@
 import { cn } from "../../lib/cn.js";
+import { sourceLanguageForFileName } from "../../languages.js";
 
 interface FileLabelProps {
   name: string;
@@ -13,7 +14,8 @@ export function FileLabel({
   markerClassName,
   nameClassName,
 }: FileLabelProps) {
-  const marker = name.toLowerCase().endsWith(".txt") ? "T" : "C";
+  const language = sourceLanguageForFileName(name);
+  const marker = language === "cpp" ? "C++" : language === "c" ? "C" : "T";
 
   return (
     <span className={cn("flex min-w-0 items-baseline gap-2", className)}>

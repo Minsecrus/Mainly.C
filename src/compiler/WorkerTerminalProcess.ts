@@ -10,7 +10,7 @@ import type {
   ProgramWorkerResponse,
 } from "./programWorkerProtocol.js";
 import type { CompilerLogSink } from "./types.js";
-import type { VirtualFileMap } from "./virtualFilesystem.js";
+import type { VirtualFileMap, VirtualTextFileMap } from "./virtualFilesystem.js";
 
 interface PendingInput {
   resolve: () => void;
@@ -20,7 +20,15 @@ interface PendingInput {
 interface WorkerTerminalProcessOptions {
   args?: string[];
   virtualFiles?: VirtualFileMap;
+  onVirtualFiles?: (virtualFiles: VirtualTextFileMap) => void;
+  onVirtualFilesError?: (message: string) => void;
   log?: CompilerLogSink;
+}
+
+const TERMINATION_SNAPSHOT_TIMEOUT_MS = 500;
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function localAssetUrl(path: string): URL {
@@ -42,6 +50,8 @@ class WorkerTerminalProcess implements TerminalProcess {
   readonly #worker = new ProgramWorker({ name: "mainly.c program" });
   readonly #pendingInput = new Map<number, PendingInput>();
   readonly #log?: CompilerLogSink;
+  readonly #onVirtualFiles?: (virtualFiles: VirtualTextFileMap) => void;
+  readonly #onVirtualFilesError?: (message: string) => void;
   #stdoutController!: ReadableStreamDefaultController<Uint8Array>;
   #stderrController!: ReadableStreamDefaultController<Uint8Array>;
   #requestId = 0;
@@ -53,9 +63,16 @@ class WorkerTerminalProcess implements TerminalProcess {
   #exit: Promise<TerminalProcessOutput>;
   #waitRequested = false;
   #closed = false;
+  #terminating = false;
+  #terminationPromise?: Promise<void>;
+  #terminationResolve?: () => void;
+  #terminationTimer?: ReturnType<typeof setTimeout>;
+  #previousVirtualFilesError?: string;
 
   constructor(wasm: Uint8Array, options: WorkerTerminalProcessOptions = {}) {
     this.#log = options.log;
+    this.#onVirtualFiles = options.onVirtualFiles;
+    this.#onVirtualFilesError = options.onVirtualFilesError;
     this.stdout = new ReadableStream({ start: (controller) => { this.#stdoutController = controller; } });
     this.stderr = new ReadableStream({ start: (controller) => { this.#stderrController = controller; } });
     this.stdin = new WritableStream<Uint8Array>({
@@ -106,17 +123,30 @@ class WorkerTerminalProcess implements TerminalProcess {
     return this.#exit;
   }
 
-  terminate(): void {
-    if (this.#closed) return;
+  terminate(): Promise<void> {
+    if (this.#closed) return Promise.resolve();
+    if (this.#terminationPromise) return this.#terminationPromise;
     this.#log?.({ source: "terminal", event: "worker:terminate" });
-    this.#closed = true;
-    this.#worker.terminate();
-    const error = new Error("Program worker was terminated");
-    for (const pending of this.#pendingInput.values()) pending.reject(error);
-    this.#pendingInput.clear();
-    this.#stdoutController.close();
-    this.#stderrController.close();
-    this.#exitReject(error);
+    this.#terminating = true;
+    this.#terminationPromise = new Promise((resolve) => {
+      this.#terminationResolve = resolve;
+    });
+    try {
+      post(this.#worker, { type: "terminate" });
+    } catch (cause) {
+      this.#completeTermination(
+        undefined,
+        `终止前无法请求最终虚拟文件快照：${errorMessage(cause)}`,
+      );
+      return this.#terminationPromise;
+    }
+    this.#terminationTimer = setTimeout(() => {
+      this.#completeTermination(
+        undefined,
+        `终止前读取最终虚拟文件快照超过 ${TERMINATION_SNAPSHOT_TIMEOUT_MS}ms，已使用最近一次同步结果`,
+      );
+    }, TERMINATION_SNAPSHOT_TIMEOUT_MS);
+    return this.#terminationPromise;
   }
 
   #sendInput(data: Uint8Array): Promise<void> {
@@ -148,6 +178,18 @@ class WorkerTerminalProcess implements TerminalProcess {
       controller.enqueue(new Uint8Array(message.data));
       return;
     }
+    if (message.type === "virtual-files") {
+      this.#deliverVirtualFiles(message.virtualFiles);
+      return;
+    }
+    if (message.type === "virtual-files-error") {
+      this.#reportVirtualFilesError(message.message);
+      return;
+    }
+    if (message.type === "terminate-result") {
+      if (this.#terminating) this.#completeTermination(message.virtualFiles, message.error);
+      return;
+    }
     if (message.type === "stdin-result") {
       const pending = this.#pendingInput.get(message.requestId);
       if (!pending) return;
@@ -157,6 +199,10 @@ class WorkerTerminalProcess implements TerminalProcess {
       return;
     }
     if (message.type === "exit") {
+      if (this.#terminating) {
+        this.#completeTermination(message.virtualFiles);
+        return;
+      }
       this.#closed = true;
       this.#stdoutController.close();
       this.#stderrController.close();
@@ -177,6 +223,10 @@ class WorkerTerminalProcess implements TerminalProcess {
 
   #fail(error: Error): void {
     if (this.#closed) return;
+    if (this.#terminating) {
+      this.#completeTermination(undefined, error.message);
+      return;
+    }
     this.#closed = true;
     this.#log?.({ source: "terminal", event: "worker:error", message: error.message });
     this.#worker.terminate();
@@ -186,6 +236,53 @@ class WorkerTerminalProcess implements TerminalProcess {
     this.#pendingInput.clear();
     this.#stdoutController.error(error);
     this.#stderrController.error(error);
+  }
+
+  #deliverVirtualFiles(virtualFiles: VirtualTextFileMap): void {
+    try {
+      this.#onVirtualFiles?.(virtualFiles);
+      this.#previousVirtualFilesError = undefined;
+    } catch (cause) {
+      this.#reportVirtualFilesError(errorMessage(cause));
+    }
+  }
+
+  #reportVirtualFilesError(message: string): void {
+    if (message === this.#previousVirtualFilesError) return;
+    this.#previousVirtualFilesError = message;
+    this.#log?.({ source: "terminal", event: "worker:virtual-files-error", message });
+    try {
+      this.#onVirtualFilesError?.(message);
+    } catch (cause) {
+      this.#log?.({
+        source: "terminal",
+        event: "worker:virtual-files-error-handler",
+        message: errorMessage(cause),
+      });
+    }
+  }
+
+  #completeTermination(virtualFiles?: VirtualTextFileMap, syncError?: string): void {
+    if (this.#closed) return;
+    if (virtualFiles) {
+      this.#log?.({
+        source: "terminal",
+        event: "worker:terminate-snapshot",
+        fileCount: Object.keys(virtualFiles).length,
+      });
+      this.#deliverVirtualFiles(virtualFiles);
+    }
+    if (syncError) this.#reportVirtualFilesError(syncError);
+    this.#closed = true;
+    if (this.#terminationTimer !== undefined) clearTimeout(this.#terminationTimer);
+    this.#worker.terminate();
+    const error = new Error("Program worker was terminated");
+    for (const pending of this.#pendingInput.values()) pending.reject(error);
+    this.#pendingInput.clear();
+    this.#stdoutController.close();
+    this.#stderrController.close();
+    this.#exitReject(error);
+    this.#terminationResolve?.();
   }
 }
 

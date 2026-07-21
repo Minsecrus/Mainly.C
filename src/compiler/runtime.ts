@@ -18,9 +18,9 @@ export interface LoadCompilerOptions {
 let sdkInitialization: Promise<unknown> | undefined;
 let compilerInitialization: Promise<ClangCompilerAdapter> | undefined;
 
-const TOOLCHAIN_FILE_NAME = "mainly-c-clang-22.1.0-1.webc";
+const TOOLCHAIN_FILE_NAME = "mainly-c-clang-22.1.0-4.webc.gz";
 const TOOLCHAIN_CACHE_PREFIX = "mainly-c-toolchain-";
-const TOOLCHAIN_CACHE_NAME = `${TOOLCHAIN_CACHE_PREFIX}clang-22.1.0-1`;
+const TOOLCHAIN_CACHE_NAME = `${TOOLCHAIN_CACHE_PREFIX}clang-22.1.0-4-gzip-v1`;
 
 function localAssetUrl(path: string): URL {
   const base = import.meta.env.BASE_URL.endsWith("/")
@@ -150,52 +150,54 @@ async function downloadToolchain(
     throw new Error(`无法载入本地 Clang 工具链（HTTP ${response.status}）`);
   }
 
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("当前浏览器不支持 gzip 流式解压，无法载入本地 Clang 工具链");
+  }
+
   const totalHeader = response.headers.get("content-length");
   const parsedTotalBytes = totalHeader ? Number.parseInt(totalHeader, 10) : undefined;
-  let totalBytes =
+  const totalBytes =
     response.headers.has("content-encoding") ||
     parsedTotalBytes === undefined ||
     !Number.isFinite(parsedTotalBytes) ||
     parsedTotalBytes <= 0
       ? undefined
       : parsedTotalBytes;
-  if (!response.body) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    await cacheWrite;
-    onProgress?.({ loadedBytes: bytes.byteLength, totalBytes, percent: 100 });
-    return bytes;
-  }
+  const compressedBody = response.body ?? new Response(await response.arrayBuffer()).body;
+  if (!compressedBody) throw new Error("本地 Clang 工具链响应没有可读取的内容");
 
-  const reader = response.body.getReader();
+  let downloadedBytes = 0;
+  const progressStream = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      downloadedBytes += chunk.byteLength;
+      onProgress?.({
+        loadedBytes: downloadedBytes,
+        totalBytes,
+        percent: totalBytes
+          ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100))
+          : undefined,
+      });
+      controller.enqueue(chunk);
+    },
+    flush() {
+      onProgress?.({ loadedBytes: downloadedBytes, totalBytes, percent: 100 });
+    },
+  });
+  const gzipDecompressor = new DecompressionStream("gzip") as unknown as TransformStream<
+    Uint8Array,
+    Uint8Array
+  >;
+  const reader = compressedBody
+    .pipeThrough(progressStream)
+    .pipeThrough(gzipDecompressor)
+    .getReader();
   const chunks: Uint8Array[] = [];
-  let preallocated = totalBytes ? new Uint8Array(totalBytes) : undefined;
   let loadedBytes = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (preallocated && loadedBytes + value.byteLength <= preallocated.byteLength) {
-      preallocated.set(value, loadedBytes);
-    } else {
-      if (preallocated) {
-        chunks.push(preallocated.subarray(0, loadedBytes));
-        preallocated = undefined;
-        totalBytes = undefined;
-      }
-      chunks.push(value);
-    }
+    chunks.push(value);
     loadedBytes += value.byteLength;
-    onProgress?.({
-      loadedBytes,
-      totalBytes,
-      percent: totalBytes ? Math.min(100, Math.round((loadedBytes / totalBytes) * 100)) : undefined,
-    });
-  }
-
-  if (preallocated) {
-    await cacheWrite;
-    return loadedBytes === preallocated.byteLength
-      ? preallocated
-      : preallocated.slice(0, loadedBytes);
   }
 
   const bytes = new Uint8Array(loadedBytes);

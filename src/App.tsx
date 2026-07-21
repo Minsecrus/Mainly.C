@@ -16,9 +16,8 @@ import { OutputPanel } from "./components/layout/OutputPanel.js";
 import { TopBar } from "./components/layout/TopBar.js";
 import type { TerminalViewHandle } from "./components/terminal/TerminalView.js";
 import { InfoDialog } from "./components/ui/InfoDialog.js";
-import { formatCSource, preloadCFormatter } from "./editor/cFormatter.js";
+import { formatSource, preloadFormatter } from "./editor/cFormatter.js";
 import {
-  isCSourceFileName,
   useLocalFiles,
 } from "./features/files/useLocalFiles.js";
 import {
@@ -33,13 +32,37 @@ import {
   saveRunConfiguration,
   type RunConfiguration,
 } from "./features/run/runConfiguration.js";
+import {
+  compilerDriverForLanguage,
+  DEFAULT_LANGUAGE_STANDARDS,
+  isCStandard,
+  isCppStandard,
+  isLanguageStandardForLanguage,
+  isSourceCodeFileName,
+  languageStandardLabel,
+  sourceLanguageForFileName,
+  type LanguageStandard,
+  type LanguageStandardPreferences,
+} from "./languages.js";
 import type { AutoRunInterval, OutputTab, RunState, UiCompilerLog } from "./types/ui.js";
 
 type InfoDialogKind = "shortcuts" | "about" | null;
 
 const PANEL_HEIGHT_KEY = "mainly.c.panel-height.v1";
+const LANGUAGE_STANDARDS_KEY = "mainly.c.language-standards.v1";
 const ANSI_ESCAPE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
-const C_STANDARD = "c23" as const;
+
+function loadLanguageStandards(): LanguageStandardPreferences {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LANGUAGE_STANDARDS_KEY) ?? "null") as Partial<LanguageStandardPreferences> | null;
+    return {
+      c: isCStandard(parsed?.c) ? parsed.c : DEFAULT_LANGUAGE_STANDARDS.c,
+      cpp: isCppStandard(parsed?.cpp) ? parsed.cpp : DEFAULT_LANGUAGE_STANDARDS.cpp,
+    };
+  } catch {
+    return { ...DEFAULT_LANGUAGE_STANDARDS };
+  }
+}
 
 function initialPanelHeight(): number {
   const stored = Number.parseInt(localStorage.getItem(PANEL_HEIGHT_KEY) ?? "", 10);
@@ -55,6 +78,7 @@ export default function App() {
   const [runState, setRunState] = useState<RunState>("idle");
   const [autoRunInterval, setAutoRunInterval] = useState<AutoRunInterval>(null);
   const [runConfiguration, setRunConfiguration] = useState(loadRunConfiguration);
+  const [languageStandards, setLanguageStandards] = useState(loadLanguageStandards);
   const [diagnosticsByFile, setDiagnosticsByFile] = useState<Record<string, ClangDiagnostic[]>>({});
   const [logs, setLogs] = useState<UiCompilerLog[]>([]);
   const [session, setSession] = useState<InteractiveTerminalSession>();
@@ -85,9 +109,13 @@ export default function App() {
   const activeDiagnostics = activeEditorFile
     ? diagnosticsByFile[activeEditorFile.id] ?? []
     : [];
-  const activeFileRunnable = activeEditorFile
-    ? isCSourceFileName(activeEditorFile.name)
-    : false;
+  const activeSourceLanguage = activeEditorFile
+    ? sourceLanguageForFileName(activeEditorFile.name)
+    : undefined;
+  const activeLanguageStandard = activeSourceLanguage
+    ? languageStandards[activeSourceLanguage]
+    : undefined;
+  const activeFileRunnable = activeSourceLanguage !== undefined;
   const busy = runState === "loading" || runState === "compiling" || runState === "running";
   const busyRef = useRef(busy);
   busyRef.current = busy;
@@ -124,6 +152,10 @@ export default function App() {
   }, [panelHeight]);
 
   useEffect(() => {
+    localStorage.setItem(LANGUAGE_STANDARDS_KEY, JSON.stringify(languageStandards));
+  }, [languageStandards]);
+
+  useEffect(() => {
     setOpenFileIds((current) => {
       const validIds = current.filter((id) =>
         workspace.files.some((file) => file.id === id),
@@ -149,7 +181,7 @@ export default function App() {
         if (!active) return;
         setEnvironmentError(undefined);
 
-        const formatterInitialization = preloadCFormatter()
+        const formatterInitialization = preloadFormatter()
           .then(() => {
             if (active) setFormatterReady(true);
           })
@@ -211,17 +243,45 @@ export default function App() {
       !environmentReadyRef.current ||
       busyRef.current ||
       !activeEditorFile ||
-      !isCSourceFileName(activeEditorFile.name)
+      !activeSourceLanguage ||
+      !activeLanguageStandard
     ) return;
     busyRef.current = true;
     const file = activeEditorFile;
     const source = file.content;
+    const syncedTextFileNames = new Set<string>();
+    let previousVirtualFileSyncError: string | undefined;
+    const reportVirtualFileSyncError = (cause: unknown) => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (message === previousVirtualFileSyncError) return;
+      previousVirtualFileSyncError = message;
+      terminalRef.current?.writeln(
+        `\r\n\x1b[2m[虚拟文件] 同步失败：${terminalText(message)}\x1b[0m`,
+      );
+    };
+    const syncRuntimeTextFiles = (virtualFiles: Readonly<Record<string, string>>) => {
+      try {
+        const result = workspace.syncRuntimeTextFiles(virtualFiles);
+        previousVirtualFileSyncError = undefined;
+        for (const name of [...result.added, ...result.updated, ...result.removed]) {
+          syncedTextFileNames.add(name.toLowerCase());
+        }
+        return result;
+      } catch (cause) {
+        reportVirtualFileSyncError(cause);
+        return { added: [], updated: [], removed: [] };
+      }
+    };
     setPanelOpen(true);
     setPanelMaximized(false);
     setActiveTab("terminal");
     setDiagnosticsByFile((current) => ({ ...current, [file.id]: [] }));
     terminalRef.current?.clear();
-    terminalRef.current?.writeln(`\x1b[1m${file.name}\x1b[0m  ·  C23  ·  Clang 22.1.0`);
+    const compilerDriver = compilerDriverForLanguage(activeSourceLanguage);
+    const standardLabel = languageStandardLabel(activeLanguageStandard);
+    terminalRef.current?.writeln(
+      `\x1b[1m${file.name}\x1b[0m  ·  ${standardLabel}  ·  ${compilerDriver} 22.1.0`,
+    );
     terminalRef.current?.writeln("\x1b[2m编译和运行均在当前浏览器中完成。\x1b[0m\r\n");
 
     try {
@@ -233,24 +293,26 @@ export default function App() {
       });
 
       setRunState("compiling");
-      terminalRef.current?.writeln("\x1b[2m[clang] 正在编译…\x1b[0m");
+      terminalRef.current?.writeln(`\x1b[2m[${compilerDriver}] 正在编译…\x1b[0m`);
       const result = await adapter.compile({
         fileName: file.name,
         source,
-        standard: C_STANDARD,
+        standard: activeLanguageStandard,
         interactive: true,
       });
       setDiagnosticsByFile((current) => ({ ...current, [file.id]: result.diagnostics }));
 
       if (!result.ok || !result.wasm) {
         setRunState("error");
-        terminalRef.current?.writeln("\x1b[1m[clang] 编译失败\x1b[0m");
+        terminalRef.current?.writeln(`\x1b[1m[${compilerDriver}] 编译失败\x1b[0m`);
         terminalRef.current?.write(terminalText(`${result.stdout}${result.stderr}`));
         if (result.diagnostics.length > 0) setActiveTab("problems");
         return;
       }
 
-      terminalRef.current?.writeln(`\x1b[2m[clang] 编译完成 · ${result.elapsedMs}ms\x1b[0m\r\n`);
+      terminalRef.current?.writeln(
+        `\x1b[2m[${compilerDriver}] 编译完成 · ${result.elapsedMs}ms\x1b[0m\r\n`,
+      );
       const virtualFiles = Object.fromEntries(
         workspace.files.map((workspaceFile) => [workspaceFile.name, workspaceFile.content]),
       );
@@ -260,6 +322,8 @@ export default function App() {
         log: appendLog,
         onStdout: (text) => terminalRef.current?.write(text),
         onStderr: (text) => terminalRef.current?.write(terminalText(text)),
+        onVirtualFiles: syncRuntimeTextFiles,
+        onVirtualFilesError: reportVirtualFileSyncError,
         hiddenStderrSequences: [MAINLY_EXIT_MARKER],
       });
       const presetInput = prepareStandardInput(runConfiguration.standardInput);
@@ -273,22 +337,18 @@ export default function App() {
         .waitForStderr(MAINLY_EXIT_MARKER)
         .then(() => nextSession.finish())
         .then((output) => {
-          const syncedFiles = workspace.syncRuntimeTextFiles(output.virtualFiles, virtualFiles);
+          if (nextSession.terminated) return;
+          syncRuntimeTextFiles(output.virtualFiles);
           if (sessionRef.current === nextSession) sessionRef.current = undefined;
           setSession((current) => (current === nextSession ? undefined : current));
           setRunState(output.ok ? "success" : "error");
           terminalRef.current?.writeln(
             `\r\n\x1b[2m[进程结束] 退出码 ${output.code}\x1b[0m`,
           );
-          const syncedCount = syncedFiles.added.length + syncedFiles.updated.length;
+          const syncedCount = syncedTextFileNames.size;
           if (syncedCount > 0) {
             terminalRef.current?.writeln(
               `\x1b[2m[虚拟文件] 已同步 ${syncedCount} 个文本文件\x1b[0m`,
-            );
-          }
-          if (syncedFiles.conflicts.length > 0) {
-            terminalRef.current?.writeln(
-              `\x1b[2m[虚拟文件] ${syncedFiles.conflicts.length} 个文件在运行期间被编辑，已保留编辑器版本\x1b[0m`,
             );
           }
         })
@@ -299,7 +359,15 @@ export default function App() {
     } catch (cause) {
       reportRuntimeError(cause);
     }
-  }, [activeEditorFile, appendLog, reportRuntimeError, runConfiguration, workspace.files]);
+  }, [
+    activeEditorFile,
+    activeLanguageStandard,
+    activeSourceLanguage,
+    appendLog,
+    reportRuntimeError,
+    runConfiguration,
+    workspace.files,
+  ]);
 
   const runCurrentFileRef = useRef(runCurrentFile);
   runCurrentFileRef.current = runCurrentFile;
@@ -312,35 +380,40 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [autoRunInterval]);
 
-  const stopCurrentRun = useCallback(() => {
+  const stopCurrentRun = useCallback(async () => {
     const current = sessionRef.current;
     if (!current) return;
     setAutoRunInterval(null);
-    current.terminate();
     sessionRef.current = undefined;
     setSession(undefined);
-    setRunState("stopped");
-    terminalRef.current?.writeln("\r\n^C\r\n\x1b[2m[进程已终止]\x1b[0m");
+    terminalRef.current?.writeln("\r\n^C");
+    try {
+      await current.terminate();
+    } finally {
+      setRunState("stopped");
+      terminalRef.current?.writeln("\x1b[2m[进程已终止]\x1b[0m");
+    }
   }, []);
 
   const formatAndSaveCurrentFile = useCallback(async () => {
     const file = activeEditorFile;
     if (!file) return;
+    if (busyRef.current && !isSourceCodeFileName(file.name)) return;
     const editor = editorRef.current;
     const model = editor?.getModel();
     let source = model?.getValue() ?? file.content;
     let formatted = source;
 
-    if (!isCSourceFileName(file.name)) {
+    if (!isSourceCodeFileName(file.name)) {
       workspace.saveActiveFile(source);
       return;
     }
 
     try {
-      formatted = await formatCSource(source, file.name);
+      formatted = await formatSource(source, file.name);
       if (model && model.getValue() !== source) {
         source = model.getValue();
-        formatted = await formatCSource(source, file.name);
+        formatted = await formatSource(source, file.name);
       }
     } catch (cause) {
       console.error("[mainly.c] format-on-save failed", cause);
@@ -376,6 +449,17 @@ export default function App() {
     saveRunConfiguration(configuration);
   }
 
+  function changeLanguageStandard(standard: LanguageStandard): void {
+    if (!activeSourceLanguage || !isLanguageStandardForLanguage(activeSourceLanguage, standard)) {
+      return;
+    }
+    setLanguageStandards((current) => ({ ...current, [activeSourceLanguage]: standard }));
+    if (activeEditorFile) {
+      setDiagnosticsByFile((current) => ({ ...current, [activeEditorFile.id]: [] }));
+    }
+    if (!busy) setRunState("idle");
+  }
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key.toLowerCase() === "s") {
@@ -404,6 +488,7 @@ export default function App() {
   function updateActiveFile(content: string): void {
     const id = activeEditorFile?.id;
     if (!id) return;
+    if (busyRef.current && !isSourceCodeFileName(activeEditorFile.name)) return;
     workspace.updateFile(id, content);
     setDiagnosticsByFile((current) => ({ ...current, [id]: [] }));
     if (!busy) setRunState("idle");
@@ -430,6 +515,8 @@ export default function App() {
   }
 
   function deleteFile(id: string): void {
+    const target = workspace.files.find((file) => file.id === id);
+    if (busyRef.current && target && !isSourceCodeFileName(target.name)) return;
     const index = openFileIds.indexOf(id);
     const remainingIds = openFileIds.filter((fileId) => fileId !== id);
     const deletingActiveFile = workspace.activeFile.id === id;
@@ -451,9 +538,10 @@ export default function App() {
   }
 
   function clearNonCodeFiles(): void {
+    if (busyRef.current) return;
     const removedIds = new Set(
       workspace.files
-        .filter((file) => !isCSourceFileName(file.name))
+        .filter((file) => !isSourceCodeFileName(file.name))
         .map((file) => file.id),
     );
     if (removedIds.size === 0) return;
@@ -476,6 +564,7 @@ export default function App() {
   }
 
   function importWorkspace(importedWorkspace: WorkspaceTransferData): void {
+    if (busyRef.current) return;
     const activeFile = workspace.replaceWorkspace(
       importedWorkspace.files,
       importedWorkspace.activeFileName,
@@ -549,13 +638,16 @@ export default function App() {
       return (
         <div className="space-y-4">
           <div className="space-y-2">
-            <p className="font-medium text-neutral-100">Mainly.C 是面向 C 初学者的纯浏览器单文件编辑器。</p>
+            <p className="font-medium text-neutral-100">Mainly.C 是面向 C 与 C++ 学习者的纯浏览器多文件编辑器。</p>
             <p>代码在当前浏览器中完成编译、链接和运行，不会发送到远程编译服务器。</p>
           </div>
 
           <dl className="grid grid-cols-[78px_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-white/[0.12] bg-white/[0.045] px-3 py-2.5 text-[11px]">
-            <dt className="text-neutral-400">语言标准</dt><dd className="text-neutral-100">C23</dd>
+            <dt className="text-neutral-400">C 标准</dt><dd className="text-neutral-100">C99 / C11 / C23</dd>
+            <dt className="text-neutral-400">C++ 标准</dt><dd className="text-neutral-100">C++11 / 14 / 17 / 20 / 23 / 26</dd>
             <dt className="text-neutral-400">编译器</dt><dd className="text-neutral-100">Clang / LLD 22.1.0</dd>
+            <dt className="text-neutral-400">C 标准库</dt><dd className="text-neutral-100">WASIX libc v2026-07-03.1（C23 部分支持）</dd>
+            <dt className="text-neutral-400">C++ 标准库</dt><dd className="text-neutral-100">libc++ 22.1.0（WASIX）</dd>
             <dt className="text-neutral-400">格式化器</dt><dd className="text-neutral-100">Clang-format 22.1.8</dd>
             <dt className="text-neutral-400">编译目标</dt><dd className="font-mono text-[10px] text-neutral-100">wasm32-wasip1 + WASIX</dd>
             <dt className="text-neutral-400">编辑器</dt><dd className="text-neutral-100">Monaco Editor 0.53.0</dd>
@@ -564,7 +656,7 @@ export default function App() {
 
           <div className="space-y-2 text-neutral-300">
             <p>首次打开时，编辑器显示后会在后台加载约 32 MB 的本地 Clang 工具链；准备完成前运行按钮保持禁用。文件内容、标准输入输出和诊断信息仅保存在当前浏览器。</p>
-            <p>每次只构建当前文件。程序运行在 WASI/WASIX 浏览器沙箱中，因此系统调用、网络、进程和本机文件访问与原生环境有所不同。</p>
+            <p>每次只构建当前文件。C23 语言模式可用，但 C23 标准库仍为部分支持；C++23 起支持 &lt;print&gt; 与 std::println，C++17 起支持常用 std::filesystem 操作。C++ 异常未启用，std::filesystem::space() 因 WASIX statvfs 限制会报告不支持，C++26 为实验性草案模式。程序运行时，文本文件由虚拟文件系统管理并每 100ms 同步到工作区，期间在编辑器中保持只读；退出或手动终止前会最终同步，失败时在终端提示。</p>
           </div>
 
           <div className="flex items-center justify-between border-t border-white/[0.1] pt-3 text-[10px] text-neutral-400">
@@ -603,10 +695,14 @@ export default function App() {
         runDisabled={!environmentReady || !activeEditorFile || !activeFileRunnable}
         autoRunInterval={autoRunInterval}
         runConfiguration={runConfiguration}
+        sourceLanguage={activeSourceLanguage}
+        languageStandard={activeLanguageStandard}
+        languageStandardDisabled={busy}
         onRun={() => void runCurrentFile()}
         onStop={stopCurrentRun}
         onAutoRunIntervalChange={changeAutoRunInterval}
         onRunConfigurationChange={changeRunConfiguration}
+        onLanguageStandardChange={changeLanguageStandard}
         onClearOutput={clearOutput}
         onResetLayout={resetLayout}
         onShowShortcuts={() => setInfoDialog("shortcuts")}
@@ -624,12 +720,15 @@ export default function App() {
           <FileExplorer
             files={workspace.files}
             activeFileId={workspace.activeFileId}
+            textFilesLocked={busy}
             onSelect={openFile}
             onCreate={(name, kind) => {
+              if (busyRef.current && kind === "text") return;
               const file = workspace.createFile(name, kind);
               setOpenFileIds((current) => current.includes(file.id) ? current : [...current, file.id]);
             }}
             onRename={(id, name) => {
+              if (busyRef.current) return;
               workspace.renameFile(id, name);
               setDiagnosticsByFile((current) => ({ ...current, [id]: [] }));
             }}
@@ -638,6 +737,7 @@ export default function App() {
             onExportWorkspace={exportWorkspace}
             onClearNonCodeFiles={clearNonCodeFiles}
             onReset={() => {
+              if (busyRef.current) return;
               workspace.resetWorkspace();
               setOpenFileIds(["main-c"]);
               setDiagnosticsByFile({});
@@ -653,6 +753,7 @@ export default function App() {
             dirtyFileIds={workspace.dirtyFileIds}
             diagnostics={activeDiagnostics}
             editorRef={editorRef}
+            textFileReadOnly={busy}
             onEditorReady={() => setEditorReady(true)}
             onChange={updateActiveFile}
             onSelectFile={openFile}

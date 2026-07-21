@@ -18,6 +18,16 @@ import {
   type VirtualFileMap,
   type VirtualTextFileMap,
 } from "./virtualFilesystem.js";
+import {
+  compilerDriverForLanguage,
+  DEFAULT_LANGUAGE_STANDARDS,
+  isLanguageStandardForLanguage,
+  sourceLanguageForFileName,
+  type LanguageStandard,
+  type SourceLanguage,
+} from "../languages.js";
+
+export type { CppStandard, CStandard, LanguageStandard } from "../languages.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const INTERACTIVE_RUNTIME_HEADER = "__mainly_runtime.h";
@@ -97,7 +107,7 @@ const INTERACTIVE_RUNTIME_FLAGS = [
   "-Wl,--export=__tls_base",
 ] as const;
 
-type ToolName = "clang" | "wasm-ld" | "llvm-ar" | "llvm-ranlib" | "llvm-nm";
+type ToolName = "clang" | "clang++" | "wasm-ld" | "llvm-ar" | "llvm-ranlib" | "llvm-nm";
 
 export interface ClangCompilerAdapterOptions {
   runtime?: Runtime;
@@ -108,12 +118,10 @@ export interface ClangCompilerAdapterOptions {
 export interface CompileOptions {
   fileName: string;
   source: string | Uint8Array;
-  standard?: CStandard;
+  standard?: LanguageStandard;
   interactive?: boolean;
   additionalArguments?: readonly string[];
 }
-
-export type CStandard = "c23" | "c17" | "c11";
 
 export interface CompileResult {
   ok: boolean;
@@ -129,6 +137,8 @@ export interface CompileResult {
 export interface StartProgramOptions extends TerminalSessionOptions {
   args?: string[];
   virtualFiles?: VirtualFileMap;
+  onVirtualFiles?: (virtualFiles: VirtualTextFileMap) => void;
+  onVirtualFilesError?: (message: string) => void;
 }
 
 export interface RunBatchOptions {
@@ -172,6 +182,7 @@ export function parseClangCommandPlan(output: string): string[][] {
 
 function toolForExecutable(executable: string): ToolName {
   const name = executable.replaceAll("\\", "/").split("/").at(-1)?.toLowerCase();
+  if (name === "clang++" || name?.startsWith("clang++-")) return "clang++";
   if (name === "clang" || name?.startsWith("clang-")) return "clang";
   if (name === "wasm-ld" || name === "ld.lld") return "wasm-ld";
   if (name === "ar" || name === "llvm-ar") return "llvm-ar";
@@ -180,10 +191,12 @@ function toolForExecutable(executable: string): ToolName {
   throw new Error(`Unsupported Clang subprocess: ${executable}`);
 }
 
-function validateFileName(fileName: string): void {
-  if (!/^[^/\\]+\.c$/i.test(fileName) || fileName === ".c") {
-    throw new Error("mainly.c compiles one root-level .c file at a time");
+function validateFileName(fileName: string): SourceLanguage {
+  const language = sourceLanguageForFileName(fileName);
+  if (!language || fileName.includes("/") || fileName.includes("\\") || fileName.startsWith(".")) {
+    throw new Error("mainly.c compiles one root-level C or C++ source file at a time");
   }
+  return language;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -237,87 +250,107 @@ export class ClangCompilerAdapter {
   }
 
   async compile(options: CompileOptions): Promise<CompileResult> {
-    validateFileName(options.fileName);
+    const language = validateFileName(options.fileName);
+    const standard = options.standard ?? DEFAULT_LANGUAGE_STANDARDS[language];
+    if (!isLanguageStandardForLanguage(language, standard)) {
+      throw new Error(`The ${standard} standard does not match ${options.fileName}`);
+    }
+    const driver = compilerDriverForLanguage(language);
     const startedAt = performance.now();
-    const outputName = `${options.fileName.slice(0, -2)}.wasm`;
+    const outputName = `${options.fileName.replace(/\.[^.]+$/, "")}.wasm`;
     const workspace = new Directory({
       [options.fileName]: options.source,
       ...(options.interactive ? { [INTERACTIVE_RUNTIME_HEADER]: INTERACTIVE_RUNTIME_SOURCE } : {}),
     });
-    const compilerArgs = [
-      `-std=${options.standard ?? "c23"}`,
-      ...DEFAULT_COMPILER_FLAGS,
-      ...(options.interactive
-        ? ["-include", `${VIRTUAL_WORKSPACE_PATH}/${INTERACTIVE_RUNTIME_HEADER}`]
-        : []),
-      ...(options.interactive ? INTERACTIVE_RUNTIME_FLAGS : []),
-      ...(options.additionalArguments ?? []),
-      `${VIRTUAL_WORKSPACE_PATH}/${options.fileName}`,
-      ...DEFAULT_LINKER_FLAGS,
-      "-o",
-      `${VIRTUAL_WORKSPACE_PATH}/${outputName}`,
-    ];
+    try {
+      const compilerArgs = [
+        `-std=${standard}`,
+        "-x",
+        language === "cpp" ? "c++" : "c",
+        ...DEFAULT_COMPILER_FLAGS,
+        ...(language === "cpp" ? ["-fno-exceptions"] : []),
+        ...(options.interactive
+          ? ["-include", `${VIRTUAL_WORKSPACE_PATH}/${INTERACTIVE_RUNTIME_HEADER}`]
+          : []),
+        ...(options.interactive ? INTERACTIVE_RUNTIME_FLAGS : []),
+        ...(options.additionalArguments ?? []),
+        `${VIRTUAL_WORKSPACE_PATH}/${options.fileName}`,
+        ...DEFAULT_LINKER_FLAGS,
+        "-o",
+        `${VIRTUAL_WORKSPACE_PATH}/${outputName}`,
+      ];
 
-    const plan = await this.#runCommand("clang", ["-###", ...compilerArgs], workspace, "plan");
-    const planText = `${plan.output.stdout}${plan.output.stderr}`;
-    if (!plan.output.ok) {
-      return this.#compileFailure(plan.output, planText, [], startedAt);
-    }
-
-    const commands = parseClangCommandPlan(planText);
-    let stdout = "";
-    let stderr = "";
-    for (const [index, [executable, ...args]] of commands.entries()) {
-      const tool = toolForExecutable(executable);
-      const result = await this.#runCommand(
-        tool,
-        args,
-        workspace,
-        `command-${index + 1}:${tool}`,
-      );
-      stdout += result.output.stdout;
-      stderr += result.output.stderr;
-      if (!result.output.ok) {
-        return {
-          ok: false,
-          diagnostics: parseClangDiagnostics(`${stdout}${stderr}`),
-          stdout,
-          stderr,
-          planOutput: planText,
-          commandPlan: commands,
-          elapsedMs: Math.round(performance.now() - startedAt),
-        };
+      const plan = await this.#runCommand(driver, ["-###", ...compilerArgs], workspace, "plan");
+      const planText = `${plan.output.stdout}${plan.output.stderr}`;
+      if (!plan.output.ok) {
+        return this.#compileFailure(plan.output, planText, [], startedAt);
       }
-    }
 
-    return {
-      ok: true,
-      wasm: await workspace.readFile(outputName),
-      diagnostics: parseClangDiagnostics(`${stdout}${stderr}`),
-      stdout,
-      stderr,
-      planOutput: planText,
-      commandPlan: commands,
-      elapsedMs: Math.round(performance.now() - startedAt),
-    };
+      const commands = parseClangCommandPlan(planText);
+      let stdout = "";
+      let stderr = "";
+      for (const [index, [executable, ...args]] of commands.entries()) {
+        const tool = toolForExecutable(executable);
+        const result = await this.#runCommand(
+          tool,
+          args,
+          workspace,
+          `command-${index + 1}:${tool}`,
+        );
+        stdout += result.output.stdout;
+        stderr += result.output.stderr;
+        if (!result.output.ok) {
+          return {
+            ok: false,
+            diagnostics: parseClangDiagnostics(`${stdout}${stderr}`),
+            stdout,
+            stderr,
+            planOutput: planText,
+            commandPlan: commands,
+            elapsedMs: Math.round(performance.now() - startedAt),
+          };
+        }
+      }
+
+      return {
+        ok: true,
+        wasm: await workspace.readFile(outputName),
+        diagnostics: parseClangDiagnostics(`${stdout}${stderr}`),
+        stdout,
+        stderr,
+        planOutput: planText,
+        commandPlan: commands,
+        elapsedMs: Math.round(performance.now() - startedAt),
+      };
+    } finally {
+      workspace.free();
+    }
   }
 
   async runBatch(wasm: Uint8Array, options: RunBatchOptions = {}): Promise<RunBatchResult> {
     const program = await Wasmer.fromFile(wasm, this.#runtime);
-    if (!program.entrypoint) throw new Error("Compiled WebAssembly has no entrypoint");
-    const workspace = new Directory(options.virtualFiles);
-    const instance = await program.entrypoint.run({
-      args: options.args,
-      stdin: options.stdin,
-      cwd: VIRTUAL_WORKSPACE_PATH,
-      mount: { [VIRTUAL_WORKSPACE_PATH]: workspace },
-    });
-    const output = await withTimeout(
-      instance.wait(),
-      this.#commandTimeoutMs,
-      `Program did not exit within ${this.#commandTimeoutMs}ms`,
-    );
-    return { ...output, virtualFiles: await readVirtualTextFiles(workspace) };
+    try {
+      if (!program.entrypoint) throw new Error("Compiled WebAssembly has no entrypoint");
+      const workspace = new Directory(options.virtualFiles);
+      try {
+        const instance = await program.entrypoint.run({
+          args: options.args,
+          stdin: options.stdin,
+          cwd: VIRTUAL_WORKSPACE_PATH,
+          mount: { [VIRTUAL_WORKSPACE_PATH]: workspace },
+        });
+        const output = await withTimeout(
+          instance.wait(),
+          this.#commandTimeoutMs,
+          `Program did not exit within ${this.#commandTimeoutMs}ms`,
+        );
+        return { ...output, virtualFiles: await readVirtualTextFiles(workspace) };
+      } finally {
+        workspace.free();
+      }
+    } finally {
+      program.free();
+    }
   }
 
   async startInteractive(
@@ -328,6 +361,8 @@ export class ClangCompilerAdapter {
     const process = await startWorkerTerminalProcess(wasm, {
       args: options.args,
       virtualFiles: options.virtualFiles,
+      onVirtualFiles: options.onVirtualFiles,
+      onVirtualFilesError: options.onVirtualFilesError,
       log: options.log ?? this.#log,
     });
     return new InteractiveTerminalSession(process, {
