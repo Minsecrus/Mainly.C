@@ -32,7 +32,3 @@ Desktop.ini
 toolchain/clang-22/package/bin/
 toolchain/clang-22/package/sysroot/
 toolchain/clang-22/package/wasix-compat-sysroot/
-toolchain/clang-22/package/LICENSE-LLVM.txt
-toolchain/clang-22/package/LICENSE-WASI-LIBC.txt
-toolchain/clang-22/package/LICENSE-WASIX-LIBC.txt
-toolchain/clang-22/package/LICENSE-YOWASP.txt

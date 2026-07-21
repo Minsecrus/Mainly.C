@@ -41,6 +41,42 @@ $WasmerPath = [System.IO.Path]::GetFullPath($WasmerPath)
 New-Item -ItemType Directory -Path $cacheRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 
+function Invoke-PinnedDownload {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Uri,
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [string]$ExpectedSha256
+    )
+
+    $partialPath = "$Path.partial"
+    try {
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+                Invoke-WebRequest -Uri $Uri -OutFile $partialPath
+                break
+            } catch {
+                if ($attempt -eq 5) {
+                    throw
+                }
+                $retryDelaySeconds = [Math]::Min(5 * $attempt, 20)
+                Write-Warning "Download attempt $attempt failed for $Uri; retrying in $retryDelaySeconds seconds"
+                Start-Sleep -Seconds $retryDelaySeconds
+            }
+        }
+
+        $actualSha256 = (Get-FileHash -LiteralPath $partialPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actualSha256 -ne $ExpectedSha256) {
+            throw "Downloaded file checksum mismatch for $Uri. Expected $ExpectedSha256, got $actualSha256"
+        }
+        Move-Item -LiteralPath $partialPath -Destination $Path -Force
+    } finally {
+        Remove-Item -LiteralPath $partialPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if (-not $SourceArchive -and -not (Test-Path -LiteralPath $archivePath)) {
     $partialPath = "$archivePath.partial"
     Invoke-WebRequest -Uri $archiveUrl -OutFile $partialPath
@@ -174,24 +210,35 @@ $licenseDownloads = @(
     @{
         Uri = 'https://codeberg.org/YoWASP/llvm-project/raw/commit/9560ae0f2cc440e4fc891fddbc119da6f56daa59/LICENSE.TXT'
         Path = Join-Path $packageRoot 'LICENSE-LLVM.txt'
+        Sha256 = '8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee'
     },
     @{
         Uri = 'https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/LICENSE'
         Path = Join-Path $packageRoot 'LICENSE-WASI-LIBC.txt'
+        Sha256 = '2711a8b5a5cdfef0e639f96c1aca12ae23d7d64a02d0507f1bdf14d2b27bbc3a'
     },
     @{
         Uri = 'https://codeberg.org/YoWASP/clang/raw/commit/409b7dfdbd5ed12545eed706808fd423f1f692c6/LICENSE.txt'
         Path = Join-Path $packageRoot 'LICENSE-YOWASP.txt'
+        Sha256 = '65c6633c2c9effa87f95bfe794d5da07bd3faab2814e4a0a15883e28ec4e543f'
     },
     @{
         Uri = 'https://raw.githubusercontent.com/wasix-org/wasix-libc/09503b230e8acc721c1e013ca28a41bf149e4ee2/LICENSE'
         Path = Join-Path $packageRoot 'LICENSE-WASIX-LIBC.txt'
+        Sha256 = 'da1128117561950db9e04201ce9ac3f0bd9e3baf852289211608b73098d51ac0'
     }
 )
 
 foreach ($license in $licenseDownloads) {
-    if ($Force -or -not (Test-Path -LiteralPath $license.Path)) {
-        Invoke-WebRequest -Uri $license.Uri -OutFile $license.Path
+    if (-not (Test-Path -LiteralPath $license.Path)) {
+        Invoke-PinnedDownload `
+            -Uri $license.Uri `
+            -Path $license.Path `
+            -ExpectedSha256 $license.Sha256
+    }
+    $actualLicenseSha256 = (Get-FileHash -LiteralPath $license.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualLicenseSha256 -ne $license.Sha256) {
+        throw "Pinned license checksum mismatch for $($license.Path). Expected $($license.Sha256), got $actualLicenseSha256"
     }
 }
 
