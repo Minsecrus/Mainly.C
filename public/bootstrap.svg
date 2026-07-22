@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">
+  <rect width="900" height="560" fill="#090909" />
+  <rect x="150" y="128" width="600" height="304" rx="24" fill="#151515" stroke="#393939" />
+  <text x="200" y="196" fill="#fda4af" font-family="system-ui, sans-serif" font-size="16" font-weight="700" letter-spacing="3">MAINLY.C</text>
+  <text x="200" y="254" fill="#ffffff" font-family="system-ui, sans-serif" font-size="30" font-weight="700">正在启动本地编译环境</text>
+  <text id="status" x="200" y="310" fill="#c8c8c8" font-family="system-ui, sans-serif" font-size="17">正在准备浏览器线程隔离，请稍候…</text>
+  <text x="200" y="360" fill="#777777" font-family="system-ui, sans-serif" font-size="14">代码、输入输出和编译过程只保存在当前浏览器中。</text>
+  <script><![CDATA[
+    (async () => {
+      const status = document.getElementById("status");
+      try {
+        if (!("serviceWorker" in navigator)) {
+          throw new Error("当前浏览器不支持 Service Worker");
+        }
+        const registration = await navigator.serviceWorker.register("./coi-serviceworker.js");
+        const worker = registration.installing || registration.waiting || registration.active;
+        if (!worker) throw new Error("无法启动隔离服务");
+        if (worker.state !== "activated") {
+          await new Promise((resolve, reject) => {
+            worker.addEventListener("statechange", () => {
+              if (worker.state === "activated") resolve();
+              if (worker.state === "redundant") reject(new Error("隔离服务安装失败"));
+            });
+          });
+        }
+        status.textContent = "环境准备完成，正在打开 Mainly.C…";
+        location.replace(new URL("index.html", location.href).href);
+      } catch (error) {
+        status.setAttribute("fill", "#fda4af");
+        status.textContent = error instanceof Error ? error.message : String(error);
+      }
+    })();
+  ]]></script>
+</svg>

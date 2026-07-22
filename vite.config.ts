@@ -10,11 +10,11 @@ import { defineConfig, type Plugin } from "vite";
 
 const repositoryRoot = path.dirname(fileURLToPath(import.meta.url));
 const sdkRoot = path.join(repositoryRoot, "node_modules", "@wasmer", "sdk", "dist");
-const coiServiceWorkerRoot = path.join(repositoryRoot, "node_modules", "coi-serviceworker");
 const outputRoot = path.join(repositoryRoot, "web-dist");
 const toolchainFileName = "mainly-c-clang-22.1.0-4.webc";
 const toolchainSource = path.join(repositoryRoot, "dist", toolchainFileName);
 const compressedToolchainSource = `${toolchainSource}.gz`;
+const publishedToolchainFileName = `${toolchainFileName}.data`;
 
 interface LocalAsset {
   source: string;
@@ -32,25 +32,25 @@ const localAssets = new Map<string, LocalAsset>([
   [
     "/coi-serviceworker.js",
     {
-      source: path.join(coiServiceWorkerRoot, "coi-serviceworker.js"),
+      source: path.join(repositoryRoot, "public", "coi-serviceworker.js"),
       destination: path.join(outputRoot, "coi-serviceworker.js"),
       contentType: "text/javascript; charset=utf-8",
     },
   ],
   [
-    "/runtime/wasmer-sdk.mjs",
+    "/runtime/wasmer-sdk.js",
     {
       source: path.join(sdkRoot, "index.mjs"),
-      destination: path.join(outputRoot, "runtime", "wasmer-sdk.mjs"),
+      destination: path.join(outputRoot, "runtime", "wasmer-sdk.js"),
       contentType: "text/javascript; charset=utf-8",
     },
   ],
   [
-    `/toolchain/${toolchainFileName}.gz`,
+    `/toolchain/${publishedToolchainFileName}`,
     {
       source: compressedToolchainSource,
-      destination: path.join(outputRoot, "toolchain", `${toolchainFileName}.gz`),
-      contentType: "application/gzip",
+      destination: path.join(outputRoot, "toolchain", publishedToolchainFileName),
+      contentType: "application/octet-stream",
     },
   ],
 ]);
@@ -161,6 +161,10 @@ function localRuntimeAssets(): Plugin {
         fs.mkdirSync(path.dirname(asset.destination), { recursive: true });
         fs.copyFileSync(asset.source, asset.destination);
       }
+      fs.copyFileSync(
+        path.join(outputRoot, "index.html"),
+        path.join(outputRoot, "app-shell.data"),
+      );
     },
   };
 }

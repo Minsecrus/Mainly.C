@@ -10,9 +10,11 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "../../..");
 const outputRoot = path.join(repositoryRoot, "web-dist");
 const repositoryName = process.env.GITHUB_REPOSITORY?.split("/").at(-1);
-const siteBase = process.env.GITHUB_ACTIONS === "true" && repositoryName
-  ? `/${repositoryName}/`
-  : "/";
+const siteBase = process.env.SITE_BASE || (
+  process.env.GITHUB_ACTIONS === "true" && repositoryName
+    ? `/${repositoryName}/`
+    : "/"
+);
 const chromePath =
   process.env.CHROME_PATH ||
   path.join(
@@ -45,7 +47,7 @@ async function run() {
     throw new Error("Production UI is missing. Run npm run build first.");
   }
   const rawToolchainPath = path.join(outputRoot, "toolchain", "mainly-c-clang-22.1.0-4.webc");
-  const compressedToolchainPath = `${rawToolchainPath}.gz`;
+  const compressedToolchainPath = `${rawToolchainPath}.data`;
   if (fs.existsSync(rawToolchainPath)) {
     throw new Error("Production UI still contains the uncompressed Clang WebC");
   }
@@ -118,7 +120,7 @@ async function run() {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     let toolchainResponseHeaders;
     page.on("response", (response) => {
-      if (/toolchain\/.+\.webc\.gz$/.test(new URL(response.url()).pathname)) {
+      if (/toolchain\/.+\.webc\.data$/.test(new URL(response.url()).pathname)) {
         toolchainResponseHeaders = response.headers();
       }
     });
@@ -204,7 +206,7 @@ async function run() {
       { timeout: 25_000 },
     );
     await page.locator("[data-terminal-notice]").waitFor({ state: "hidden", timeout: 5_000 });
-    if (!requestedPaths.some((pathname) => /toolchain\/.+\.webc\.gz/.test(pathname))) {
+    if (!requestedPaths.some((pathname) => /toolchain\/.+\.webc\.data/.test(pathname))) {
       throw new Error("Compressed Clang WebC was not loaded after the UI became ready");
     }
     if (
@@ -639,14 +641,14 @@ async function run() {
     );
     await page.locator("section svg.lucide-x").first().waitFor({ state: "visible", timeout: 5_000 });
 
-    const toolchainRequestCount = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.gz/.test(pathname)).length;
+    const toolchainRequestCount = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.data/.test(pathname)).length;
     if (toolchainRequestCount !== 1) {
       throw new Error(`Expected one initial Clang WebC request, received ${toolchainRequestCount}`);
     }
     await page.reload({ waitUntil: "domcontentloaded", timeout: 20_000 });
     await page.locator(".monaco-editor").waitFor({ state: "visible", timeout: 20_000 });
     await page.locator("[data-terminal-notice]").waitFor({ state: "hidden", timeout: 25_000 });
-    const requestsAfterReload = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.gz/.test(pathname)).length;
+    const requestsAfterReload = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.data/.test(pathname)).length;
     if (requestsAfterReload !== toolchainRequestCount) {
       throw new Error("Clang WebC was downloaded again instead of being read from Cache Storage");
     }
