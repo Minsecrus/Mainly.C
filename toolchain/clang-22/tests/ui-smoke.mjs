@@ -155,6 +155,18 @@ async function run() {
       throw new Error("Enabled icon button does not use the pointer cursor");
     }
     await settingsButton.click();
+    const settingsMenu = page.getByRole("menu", { name: "设置" });
+    const autoCompletionItem = page.getByRole("menuitemcheckbox");
+    await autoCompletionItem.click();
+    await settingsMenu.waitFor({ state: "visible" });
+    if ((await autoCompletionItem.getAttribute("aria-checked")) !== "true") {
+      throw new Error("Automatic completion was not enabled from the settings menu");
+    }
+    await autoCompletionItem.click();
+    await settingsMenu.waitFor({ state: "visible" });
+    if ((await autoCompletionItem.getAttribute("aria-checked")) !== "false") {
+      throw new Error("Automatic completion was not disabled from the settings menu");
+    }
     const aboutMenuItem = page.getByRole("menuitem", { name: "关于" });
     if ((await aboutMenuItem.evaluate((element) => getComputedStyle(element).cursor)) !== "pointer") {
       throw new Error("Menu item does not use the pointer cursor");
@@ -163,6 +175,19 @@ async function run() {
     const aboutDialog = page.getByRole("dialog", { name: "关于" });
     await aboutDialog.getByText("Clang / LLD 22.1.0").waitFor({ state: "visible" });
     await aboutDialog.getByText("© 2026 Minsecrus · MIT License").waitFor({ state: "visible" });
+    const aboutDialogBox = await aboutDialog.boundingBox();
+    if (!aboutDialogBox || aboutDialogBox.height > 721) {
+      throw new Error(`About dialog exceeded its 720px height limit: ${aboutDialogBox?.height ?? "missing"}`);
+    }
+    const aboutDialogScrollArea = aboutDialog.locator("[data-info-dialog-scroll]");
+    const aboutDialogOverflow = await aboutDialogScrollArea.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      overflowY: getComputedStyle(element).overflowY,
+      scrollHeight: element.scrollHeight,
+    }));
+    if (aboutDialogOverflow.overflowY !== "auto" || aboutDialogOverflow.scrollHeight <= aboutDialogOverflow.clientHeight) {
+      throw new Error(`About dialog content is not independently scrollable: ${JSON.stringify(aboutDialogOverflow)}`);
+    }
     if ((await aboutDialog.getByRole("link", { name: "GitHub" }).evaluate((element) => getComputedStyle(element).cursor)) !== "pointer") {
       throw new Error("Link does not use the pointer cursor");
     }

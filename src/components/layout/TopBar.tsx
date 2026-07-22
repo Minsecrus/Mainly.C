@@ -99,6 +99,7 @@ export function TopBar({
               <MenuCheckboxItem
                 checked={autoCompletionEnabled}
                 onCheckedChange={(checked) => onAutoCompletionEnabledChange(checked === true)}
+                onSelect={(event) => event.preventDefault()}
               >
                 <span className="flex-1">自动补全</span>
                 <span className="ml-4 text-[10px] text-neutral-400">
