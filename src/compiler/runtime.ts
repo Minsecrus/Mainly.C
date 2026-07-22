@@ -18,7 +18,7 @@ export interface LoadCompilerOptions {
 let sdkInitialization: Promise<unknown> | undefined;
 let compilerInitialization: Promise<ClangCompilerAdapter> | undefined;
 
-const TOOLCHAIN_FILE_NAME = "mainly-c-clang-22.1.0-4.webc.gz";
+const TOOLCHAIN_FILE_NAME = "mainly-c-clang-22.1.0-4.webc.data";
 const TOOLCHAIN_CACHE_PREFIX = "mainly-c-toolchain-";
 const TOOLCHAIN_CACHE_NAME = `${TOOLCHAIN_CACHE_PREFIX}clang-22.1.0-4-gzip-v1`;
 
@@ -26,7 +26,7 @@ function localAssetUrl(path: string): URL {
   const base = import.meta.env.BASE_URL.endsWith("/")
     ? import.meta.env.BASE_URL
     : `${import.meta.env.BASE_URL}/`;
-  return new URL(`${base}${path}`, window.location.origin);
+  return new URL(path, new URL(base, document.baseURI));
 }
 
 async function initializeSdk(): Promise<void> {
@@ -35,7 +35,7 @@ async function initializeSdk(): Promise<void> {
   }
   sdkInitialization ??= init({
     module: new URL(wasmerSdkModuleUrl, window.location.origin),
-    workerUrl: localAssetUrl("runtime/wasmer-sdk.mjs"),
+    workerUrl: localAssetUrl("runtime/wasmer-sdk.js"),
   });
   await sdkInitialization;
 }

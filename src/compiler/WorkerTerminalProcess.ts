@@ -35,7 +35,7 @@ function localAssetUrl(path: string): URL {
   const base = import.meta.env.BASE_URL.endsWith("/")
     ? import.meta.env.BASE_URL
     : `${import.meta.env.BASE_URL}/`;
-  return new URL(`${base}${path}`, window.location.origin);
+  return new URL(path, new URL(base, document.baseURI));
 }
 
 function post(worker: Worker, message: ProgramWorkerRequest, transfer?: Transferable[]): void {
@@ -104,8 +104,8 @@ class WorkerTerminalProcess implements TerminalProcess {
         wasm: bytes,
         args: options.args,
         virtualFiles: options.virtualFiles,
-        sdkModuleUrl: new URL(wasmerSdkModuleUrl, window.location.origin).href,
-        sdkWorkerUrl: localAssetUrl("runtime/wasmer-sdk.mjs").href,
+        sdkModuleUrl: new URL(wasmerSdkModuleUrl, new URL(import.meta.env.BASE_URL, document.baseURI)).href,
+        sdkWorkerUrl: localAssetUrl("runtime/wasmer-sdk.js").href,
       },
       [bytes],
     );
