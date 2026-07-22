@@ -34,6 +34,7 @@ jobs:
         with:
           path: |
             .cache/clang-22
+            .cache/clangd-21.1.0
             .cache/llvm
             .cache/llvm-project-libcxx22
             .cache/libcxx22-wasix-build
@@ -42,7 +43,7 @@ jobs:
             .cache/wasix-libc-build
             .cache/wasix-libc-sysroot
             .tools/gnumake
-          key: ${{ runner.os }}-clang-22-libc-${{ hashFiles('toolchain/clang-22/scripts/prepare-package.ps1', 'toolchain/clang-22/scripts/build-wasix-libc.ps1', 'toolchain/clang-22/scripts/build-wasix-libcxx.ps1', 'toolchain/clang-22/cmake/wasix-libcxx.cmake', 'toolchain/clang-22/package/PROVENANCE.json') }}
+          key: ${{ runner.os }}-clang-22-libc-${{ hashFiles('toolchain/clang-22/scripts/prepare-package.ps1', 'toolchain/clang-22/scripts/build-wasix-libc.ps1', 'toolchain/clang-22/scripts/build-wasix-libcxx.ps1', 'toolchain/clang-22/cmake/wasix-libcxx.cmake', 'toolchain/clang-22/package/PROVENANCE.json', 'toolchain/clangd-21/scripts/prepare-package.ps1', 'toolchain/clangd-21/PROVENANCE.json') }}
           restore-keys: |
             ${{ runner.os }}-clang-22-libc-
 
@@ -63,6 +64,9 @@ jobs:
         run: |
           $wasmerPath = Join-Path $env:WASMER_DIR "bin/wasmer.exe"
           pwsh -NoProfile -File toolchain/clang-22/scripts/build-package.ps1 -WasmerPath $wasmerPath
+
+      - name: Prepare clangd browser runtime
+        run: npm run clangd:prepare
 
       - name: Build site
         run: npm run build

@@ -31,6 +31,8 @@ const errorLensScreenshotPath = path.join(
   "ui",
   "mainly-c-error-lens.png",
 );
+const clangdJavaScriptPath = path.join(outputRoot, "lsp", "clangd.js");
+const compressedClangdPath = path.join(outputRoot, "lsp", "clangd.wasm.gz");
 
 function contentType(filePath) {
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
@@ -45,6 +47,9 @@ async function run() {
   if (!fs.existsSync(chromePath)) throw new Error(`Chrome is missing: ${chromePath}`);
   if (!fs.existsSync(path.join(outputRoot, "index.html"))) {
     throw new Error("Production UI is missing. Run npm run build first.");
+  }
+  if (!fs.existsSync(clangdJavaScriptPath) || !fs.existsSync(compressedClangdPath)) {
+    throw new Error("Production UI is missing the clangd browser runtime");
   }
   const rawToolchainPath = path.join(outputRoot, "toolchain", "mainly-c-clang-22.1.0-4.webc");
   const compressedToolchainPath = `${rawToolchainPath}.data`;
@@ -104,6 +109,7 @@ async function run() {
   let liveTextUpdateSyncElapsedMs;
   let liveTextDeleteSyncElapsedMs;
   let terminationSnapshotElapsedMs;
+  const clangdFailures = [];
 
   try {
     await new Promise((resolve, reject) => {
@@ -127,9 +133,18 @@ async function run() {
     page.on("console", (message) => {
       if (message.type() === "error" || message.type() === "warning") {
         console.log(`[browser:${message.type()}] ${message.text()}`);
+        if (/clangd|Pthread|memory access out of bounds/i.test(message.text())) {
+          clangdFailures.push(message.text());
+        }
       }
     });
-    page.on("pageerror", (error) => console.error(`[browser:error] ${error.stack || error}`));
+    page.on("pageerror", (error) => {
+      const message = String(error.stack || error);
+      console.error(`[browser:error] ${message}`);
+      if (/clangd|Pthread|memory access out of bounds/i.test(message)) {
+        clangdFailures.push(message);
+      }
+    });
 
     console.log(`[ui-smoke] open ${siteBase} without COOP/COEP response headers`);
     await page.goto(`http://127.0.0.1:${address.port}${siteBase}`, {
@@ -140,7 +155,6 @@ async function run() {
     if (!(await page.evaluate(() => crossOriginIsolated))) {
       throw new Error("UI page is not cross-origin isolated");
     }
-
     console.log("[ui-smoke] cross-origin isolation established by coi-serviceworker");
     const runButton = page.getByRole("button", { name: "运行当前文件" });
     if (!(await runButton.isDisabled())) {
@@ -151,6 +165,18 @@ async function run() {
     }
     await page.locator("[data-terminal-notice]").waitFor({ state: "visible", timeout: 5_000 });
     console.log("[ui-smoke] run disabled while the terminal shows initialization progress");
+
+    await page.locator('.monaco-editor[data-clangd-status="ready"]').waitFor({
+      state: "attached",
+      timeout: 25_000,
+    });
+    if (
+      !requestedPaths.includes(`${siteBase}lsp/clangd.js`) ||
+      !requestedPaths.includes(`${siteBase}lsp/clangd.wasm.gz`)
+    ) {
+      throw new Error(`clangd runtime assets were not loaded: ${JSON.stringify(requestedPaths)}`);
+    }
+    console.log("[ui-smoke] clangd WebAssembly language service is ready");
 
     const settingsButton = page.getByRole("button", { name: "设置" });
     if ((await settingsButton.evaluate((element) => getComputedStyle(element).cursor)) !== "pointer") {
@@ -590,7 +616,7 @@ async function run() {
       { timeout: 10_000 },
     );
     try {
-      await page.locator(".mainly-error-lens-message").waitFor({ state: "visible", timeout: 10_000 });
+      await page.locator(".mainly-error-lens-message").first().waitFor({ state: "visible", timeout: 10_000 });
     } catch (error) {
       console.error(
         "[ui-smoke:error-lens-timeout]",
@@ -642,17 +668,32 @@ async function run() {
     await page.locator("section svg.lucide-x").first().waitFor({ state: "visible", timeout: 5_000 });
 
     const toolchainRequestCount = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.data/.test(pathname)).length;
+    const clangdRequestCount = requestedPaths.filter((pathname) => /lsp\/clangd\.wasm\.gz$/.test(pathname)).length;
     if (toolchainRequestCount !== 1) {
       throw new Error(`Expected one initial Clang WebC request, received ${toolchainRequestCount}`);
     }
+    if (clangdRequestCount !== 1) {
+      throw new Error(`Expected one initial clangd WASM request, received ${clangdRequestCount}`);
+    }
     await page.reload({ waitUntil: "domcontentloaded", timeout: 20_000 });
     await page.locator(".monaco-editor").waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator('.monaco-editor[data-clangd-status="ready"]').waitFor({
+      state: "attached",
+      timeout: 25_000,
+    });
     await page.locator("[data-terminal-notice]").waitFor({ state: "hidden", timeout: 25_000 });
     const requestsAfterReload = requestedPaths.filter((pathname) => /toolchain\/.+\.webc\.data/.test(pathname)).length;
+    const clangdRequestsAfterReload = requestedPaths.filter((pathname) => /lsp\/clangd\.wasm\.gz$/.test(pathname)).length;
     if (requestsAfterReload !== toolchainRequestCount) {
       throw new Error("Clang WebC was downloaded again instead of being read from Cache Storage");
     }
-    console.log("[ui-smoke] persistent toolchain cache reused after reload");
+    if (clangdRequestsAfterReload !== clangdRequestCount) {
+      throw new Error("clangd WASM was downloaded again instead of being read from Cache Storage");
+    }
+    if (clangdFailures.length > 0) {
+      throw new Error(`clangd failed during UI smoke: ${clangdFailures.join("\n")}`);
+    }
+    console.log("[ui-smoke] persistent compiler and clangd caches reused after reload");
 
     console.log(
       JSON.stringify(
@@ -667,6 +708,8 @@ async function run() {
           base: siteBase,
           compilerLazyLoad: true,
           compressedToolchainBytes: compressedToolchainSize,
+          compressedClangdBytes: fs.statSync(compressedClangdPath).size,
+          clangd: "ready; C++ stress path passed",
           terminal: terminalText?.replaceAll(/\s+/g, " ").trim(),
           errorLens: errorLensText,
           formatOnSave: "passed",

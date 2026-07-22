@@ -1,0 +1,25 @@
+{
+  "name": "clangd WebAssembly browser runtime",
+  "version": "21.1.0",
+  "upstreamRepository": "https://github.com/guyutongxue/clangd-in-browser",
+  "upstreamCommit": "4acd71dec6428906271e922f119d794344e0d35e",
+  "artifacts": [
+    {
+      "path": "clangd.js",
+      "url": "https://clangd.guyutongxue.site/wasm/clangd.js",
+      "bytes": 142904,
+      "sha256": "a7ff1c588eb5374783bbda84d949b92b8027c2381c786072448b96eba90c7027"
+    },
+    {
+      "path": "clangd.wasm",
+      "url": "https://clangd.guyutongxue.site/wasm/clangd.wasm",
+      "bytes": 126550863,
+      "sha256": "0d71e7a7f8e6dd369cb2a0b22cc4016d649f370e5b905adb6092536deb0ee019"
+    }
+  ],
+  "notes": [
+    "The artifacts are generated from LLVM/clangd with Emscripten and run entirely in a browser Worker.",
+    "prepare-package.ps1 verifies both byte length and SHA-256 before the site build uses an artifact.",
+    "The deployed WASM is gzip-compressed by the Vite build and cached locally by the browser runtime."
+  ]
+}

@@ -48,6 +48,7 @@ import {
   type LanguageStandard,
   type LanguageStandardPreferences,
 } from "./languages.js";
+import { clangdClient } from "./lsp/ClangdClient.js";
 import type { AutoRunInterval, OutputTab, RunState, UiCompilerLog } from "./types/ui.js";
 
 type InfoDialogKind = "shortcuts" | "about" | null;
@@ -77,6 +78,32 @@ function terminalText(text: string): string {
   return text.replace(ANSI_ESCAPE, "").replaceAll(/\r?\n/g, "\r\n");
 }
 
+function mergeDiagnostics(...groups: readonly ClangDiagnostic[][]): ClangDiagnostic[] {
+  const merged: Array<{ diagnostic: ClangDiagnostic; groupIndex: number }> = [];
+  for (const [groupIndex, diagnostics] of groups.entries()) {
+    for (const diagnostic of diagnostics) {
+      const normalizedMessage = diagnostic.message
+        .replace(/\s*\(fix available\)\s*$/i, "")
+        .trim()
+        .toLocaleLowerCase("en-US");
+      const duplicateIndex = merged.findIndex((candidate) => (
+        candidate.groupIndex !== groupIndex &&
+        candidate.diagnostic.fileName === diagnostic.fileName &&
+        candidate.diagnostic.line === diagnostic.line &&
+        candidate.diagnostic.severity === diagnostic.severity &&
+        Math.abs(candidate.diagnostic.column - diagnostic.column) <= 1 &&
+        candidate.diagnostic.message
+          .replace(/\s*\(fix available\)\s*$/i, "")
+          .trim()
+          .toLocaleLowerCase("en-US") === normalizedMessage
+      ));
+      if (duplicateIndex >= 0) merged[duplicateIndex] = { diagnostic, groupIndex };
+      else merged.push({ diagnostic, groupIndex });
+    }
+  }
+  return merged.map(({ diagnostic }) => diagnostic);
+}
+
 export default function App() {
   const workspace = useLocalFiles();
   const [runState, setRunState] = useState<RunState>("idle");
@@ -85,6 +112,7 @@ export default function App() {
   const [languageStandards, setLanguageStandards] = useState(loadLanguageStandards);
   const [editorPreferences, setEditorPreferences] = useState(loadEditorPreferences);
   const [diagnosticsByFile, setDiagnosticsByFile] = useState<Record<string, ClangDiagnostic[]>>({});
+  const [lspDiagnosticsByFileName, setLspDiagnosticsByFileName] = useState<Record<string, ClangDiagnostic[]>>({});
   const [logs, setLogs] = useState<UiCompilerLog[]>([]);
   const [session, setSession] = useState<InteractiveTerminalSession>();
   const [activeTab, setActiveTab] = useState<OutputTab>("terminal");
@@ -100,6 +128,8 @@ export default function App() {
   const [compilerProgress, setCompilerProgress] = useState<number>();
   const [environmentError, setEnvironmentError] = useState<string>();
   const [openFileIds, setOpenFileIds] = useState<string[]>(() => [workspace.activeFile.id]);
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const activeFileIdRef = useRef(workspace.activeFile.id);
   activeFileIdRef.current = workspace.activeFile.id;
@@ -112,7 +142,10 @@ export default function App() {
     ? workspace.activeFile
     : undefined;
   const activeDiagnostics = activeEditorFile
-    ? diagnosticsByFile[activeEditorFile.id] ?? []
+    ? mergeDiagnostics(
+        lspDiagnosticsByFileName[activeEditorFile.name] ?? [],
+        diagnosticsByFile[activeEditorFile.id] ?? [],
+      )
     : [];
   const activeSourceLanguage = activeEditorFile
     ? sourceLanguageForFileName(activeEditorFile.name)
@@ -159,6 +192,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(LANGUAGE_STANDARDS_KEY, JSON.stringify(languageStandards));
   }, [languageStandards]);
+
+  useEffect(() => {
+    clangdClient.syncWorkspace(workspace.files, languageStandards);
+  }, [languageStandards, workspace.files]);
+
+  useEffect(() => clangdClient.subscribeDiagnostics((fileName, diagnostics) => {
+    setLspDiagnosticsByFileName((current) => ({ ...current, [fileName]: diagnostics }));
+  }), []);
 
   useEffect(() => {
     setOpenFileIds((current) => {
@@ -610,6 +651,25 @@ export default function App() {
     });
   }
 
+  function openFileAtPosition(
+    fileName: string,
+    position: MonacoEditor.IPosition,
+  ): boolean {
+    const currentWorkspace = workspaceRef.current;
+    const file = currentWorkspace.files.find((candidate) => candidate.name === fileName);
+    if (!file) return false;
+    setOpenFileIds((current) => current.includes(file.id) ? current : [...current, file.id]);
+    currentWorkspace.selectFile(file.id);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        editorRef.current?.setPosition(position);
+        editorRef.current?.revealPositionInCenter(position);
+        editorRef.current?.focus();
+      });
+    });
+    return true;
+  }
+
   function startPanelResize(event: React.PointerEvent<HTMLDivElement>): void {
     if (panelMaximized) return;
     event.preventDefault();
@@ -635,6 +695,10 @@ export default function App() {
     if (activeTab === "logs") setLogs([]);
     else if (activeTab === "problems") {
       setDiagnosticsByFile((current) => ({ ...current, [workspace.activeFile.id]: [] }));
+      setLspDiagnosticsByFileName((current) => ({
+        ...current,
+        [workspace.activeFile.name]: [],
+      }));
     } else terminalRef.current?.clear();
   }
 
@@ -662,13 +726,14 @@ export default function App() {
             <dt className="text-neutral-400">C 标准库</dt><dd className="text-neutral-100">WASIX libc v2026-07-03.1（C23 部分支持）</dd>
             <dt className="text-neutral-400">C++ 标准库</dt><dd className="text-neutral-100">libc++ 22.1.0（WASIX）</dd>
             <dt className="text-neutral-400">格式化器</dt><dd className="text-neutral-100">Clang-format 22.1.8</dd>
+            <dt className="text-neutral-400">语言服务</dt><dd className="text-neutral-100">clangd 21.1.0（WebAssembly）</dd>
             <dt className="text-neutral-400">编译目标</dt><dd className="font-mono text-[10px] text-neutral-100">wasm32-wasip1 + WASIX</dd>
             <dt className="text-neutral-400">编辑器</dt><dd className="text-neutral-100">Monaco Editor 0.53.0</dd>
             <dt className="text-neutral-400">运行时</dt><dd className="text-neutral-100">Wasmer SDK 0.8.0</dd>
           </dl>
 
           <div className="space-y-2 text-neutral-300">
-            <p>首次打开时，编辑器显示后会在后台加载约 32 MB 的本地 Clang 工具链；准备完成前运行按钮保持禁用。文件内容、标准输入输出和诊断信息仅保存在当前浏览器。</p>
+            <p>首次打开时，编辑器显示后会在后台加载本地 Clang 工具链与 clangd 语言服务；编译工具链准备完成前运行按钮保持禁用，clangd 则独立加载并在就绪后接管语义能力。源代码通过 LSP 在浏览器内完成实时分析，文件内容、标准输入输出和诊断信息不会发送到远程服务器。</p>
             <p>每次只构建当前文件。C23 语言模式可用，但 C23 标准库仍为部分支持；C++23 起支持 &lt;print&gt; 与 std::println，C++17 起支持常用 std::filesystem 操作。C++ 异常未启用，std::filesystem::space() 因 WASIX statvfs 限制会报告不支持，C++26 为实验性草案模式。程序运行时，文本文件由虚拟文件系统管理并每 100ms 同步到工作区，期间在编辑器中保持只读；退出或手动终止前会最终同步，失败时在终端提示。</p>
           </div>
 
@@ -775,6 +840,7 @@ export default function App() {
             onChange={updateActiveFile}
             onSelectFile={openFile}
             onCloseFile={closeFile}
+            onOpenFileAtPosition={openFileAtPosition}
           />
           {panelOpen && !panelMaximized && (
             <div

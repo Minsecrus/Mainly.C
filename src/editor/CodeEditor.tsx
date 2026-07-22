@@ -9,6 +9,13 @@ import type { ClangDiagnostic } from "../compiler/diagnostics.js";
 import type { SourceFile } from "../features/files/useLocalFiles.js";
 import { sourceLanguageForFileName, type LanguageStandard } from "../languages.js";
 import {
+  clangdClient,
+  clangdFileNameFromUri,
+  clangdUriForFileName,
+  type ClangdStatus,
+} from "../lsp/ClangdClient.js";
+import { registerClangdProviders } from "../lsp/monacoProviders.js";
+import {
   clearModelCompletionContext,
   registerLanguageCompletions,
   setModelCompletionContext,
@@ -24,6 +31,10 @@ interface CodeEditorProps {
   autoCompletionEnabled: boolean;
   onChange: (value: string) => void;
   onReady: (editor: StandaloneEditor) => void;
+  onOpenFileAtPosition: (
+    fileName: string,
+    position: localMonaco.IPosition,
+  ) => boolean;
 }
 
 const monacoGlobal = globalThis as typeof globalThis & {
@@ -98,6 +109,7 @@ function configureMonaco(monaco: Monaco): void {
   }
   if (!completionsRegistered) {
     registerLanguageCompletions(monaco);
+    registerClangdProviders(monaco as typeof localMonaco);
     completionsRegistered = true;
   }
 }
@@ -116,15 +128,38 @@ export function CodeEditor({
   autoCompletionEnabled,
   onChange,
   onReady,
+  onOpenFileAtPosition,
 }: CodeEditorProps) {
   const editorRef = useRef<StandaloneEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const decorationIdsRef = useRef<string[]>([]);
+  const editorOpenerRef = useRef<localMonaco.IDisposable | null>(null);
   const [readyEpoch, setReadyEpoch] = useState(0);
+  const [clangdStatus, setClangdStatus] = useState<ClangdStatus>(clangdClient.status);
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    editorOpenerRef.current?.dispose();
+    editorOpenerRef.current = monaco.editor.registerEditorOpener({
+      openCodeEditor(source, resource, selectionOrPosition) {
+        const targetFileName = clangdFileNameFromUri(resource.toString());
+        if (!targetFileName || !selectionOrPosition) return false;
+        const position = "lineNumber" in selectionOrPosition
+          ? selectionOrPosition
+          : {
+              lineNumber: selectionOrPosition.startLineNumber,
+              column: selectionOrPosition.startColumn,
+            };
+        if (targetFileName === file.name) {
+          source.setPosition(position);
+          source.revealPositionInCenter(position);
+          source.focus();
+          return true;
+        }
+        return onOpenFileAtPosition(targetFileName, position);
+      },
+    });
     setReadyEpoch((epoch) => epoch + 1);
     onReady(editor);
     editor.focus();
@@ -133,6 +168,13 @@ export function CodeEditor({
       editor.layout();
     });
   };
+
+  useEffect(() => clangdClient.subscribeStatus(setClangdStatus), []);
+
+  useEffect(() => () => {
+    editorOpenerRef.current?.dispose();
+    editorOpenerRef.current = null;
+  }, []);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -152,7 +194,7 @@ export function CodeEditor({
         severity: markerSeverity(monaco, diagnostic),
         message: diagnostic.message,
         code: diagnostic.code,
-        source: "clang 22",
+        source: diagnostic.source ?? "clang 22",
       })),
     );
 
@@ -194,7 +236,7 @@ export function CodeEditor({
                 diagnostic.severity === "error"
                   ? "mainly-error-glyph"
                   : "mainly-warning-glyph",
-              hoverMessage: { value: `**clang 22** — ${diagnostic.message}` },
+              hoverMessage: { value: `**${diagnostic.source ?? "clang 22"}** — ${diagnostic.message}` },
             },
           },
           messageDecoration,
@@ -207,17 +249,34 @@ export function CodeEditor({
     const model = editorRef.current?.getModel();
     if (!model) return;
     setModelCompletionContext(model, {
-      enabled: autoCompletionEnabled,
+      enabled: autoCompletionEnabled && clangdStatus !== "ready",
       standard: languageStandard,
     });
     return () => clearModelCompletionContext(model);
-  }, [autoCompletionEnabled, file.id, languageStandard, readyEpoch]);
+  }, [autoCompletionEnabled, clangdStatus, file.id, languageStandard, readyEpoch]);
+
+  useEffect(() => {
+    const model = editorRef.current?.getModel();
+    const language = sourceLanguageForFileName(file.name);
+    if (!model || !language) return;
+    return clangdClient.attachModel(model, language, autoCompletionEnabled).dispose;
+  }, [file.id, file.name, readyEpoch]);
+
+  useEffect(() => {
+    const model = editorRef.current?.getModel();
+    if (model) clangdClient.setCompletionEnabled(model, autoCompletionEnabled);
+  }, [autoCompletionEnabled, file.id, readyEpoch]);
+
+  useEffect(() => {
+    const editorNode = editorRef.current?.getDomNode();
+    if (editorNode) editorNode.dataset.clangdStatus = clangdStatus;
+  }, [clangdStatus, readyEpoch]);
 
   return (
     <Editor
-      key={file.id}
+      key={`${file.id}:${file.name}`}
       height="100%"
-      path={`file:///${file.name}`}
+      path={clangdUriForFileName(file.name)}
       language={sourceLanguageForFileName(file.name) ?? "plaintext"}
       theme="mainly-monochrome"
       value={file.content}

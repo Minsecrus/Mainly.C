@@ -9,6 +9,7 @@ export interface ClangDiagnostic {
   severity: ClangDiagnosticSeverity;
   message: string;
   code?: string;
+  source?: string;
   raw: string;
 }
 

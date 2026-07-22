@@ -15,6 +15,10 @@ const toolchainFileName = "mainly-c-clang-22.1.0-4.webc";
 const toolchainSource = path.join(repositoryRoot, "dist", toolchainFileName);
 const compressedToolchainSource = `${toolchainSource}.gz`;
 const publishedToolchainFileName = `${toolchainFileName}.data`;
+const clangdCacheRoot = path.join(repositoryRoot, ".cache", "clangd-21.1.0");
+const clangdJavaScriptSource = path.join(clangdCacheRoot, "clangd.js");
+const clangdWasmSource = path.join(clangdCacheRoot, "clangd.wasm");
+const compressedClangdWasmSource = `${clangdWasmSource}.gz`;
 
 interface LocalAsset {
   source: string;
@@ -53,48 +57,71 @@ const localAssets = new Map<string, LocalAsset>([
       contentType: "application/octet-stream",
     },
   ],
+  [
+    "/lsp/clangd.js",
+    {
+      source: clangdJavaScriptSource,
+      destination: path.join(outputRoot, "lsp", "clangd.js"),
+      contentType: "text/javascript; charset=utf-8",
+    },
+  ],
+  [
+    "/lsp/clangd.wasm.gz",
+    {
+      source: compressedClangdWasmSource,
+      destination: path.join(outputRoot, "lsp", "clangd.wasm.gz"),
+      contentType: "application/gzip",
+    },
+  ],
 ]);
 
-async function generateCompressedToolchain(): Promise<void> {
-  if (!fs.existsSync(toolchainSource)) {
-    throw new Error(`Missing local runtime asset: ${toolchainSource}`);
+async function generateCompressedAsset(sourcePath: string, compressedPath: string): Promise<void> {
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`Missing local runtime asset: ${sourcePath}`);
   }
 
-  const sourceStat = fs.statSync(toolchainSource);
-  if (fs.existsSync(compressedToolchainSource)) {
-    const compressedStat = fs.statSync(compressedToolchainSource);
+  const sourceStat = fs.statSync(sourcePath);
+  if (fs.existsSync(compressedPath)) {
+    const compressedStat = fs.statSync(compressedPath);
     if (compressedStat.size > 0 && compressedStat.mtimeMs >= sourceStat.mtimeMs) return;
   }
 
-  fs.mkdirSync(path.dirname(compressedToolchainSource), { recursive: true });
-  const temporaryPath = `${compressedToolchainSource}.${process.pid}.tmp`;
+  fs.mkdirSync(path.dirname(compressedPath), { recursive: true });
+  const temporaryPath = `${compressedPath}.${process.pid}.tmp`;
   try {
     await pipeline(
-      fs.createReadStream(toolchainSource),
+      fs.createReadStream(sourcePath),
       createGzip({ level: zlibConstants.Z_BEST_COMPRESSION }),
       fs.createWriteStream(temporaryPath),
     );
-    fs.rmSync(compressedToolchainSource, { force: true });
-    fs.renameSync(temporaryPath, compressedToolchainSource);
+    fs.rmSync(compressedPath, { force: true });
+    fs.renameSync(temporaryPath, compressedPath);
   } finally {
     fs.rmSync(temporaryPath, { force: true });
   }
 }
 
+async function generateCompressedRuntimeAssets(): Promise<void> {
+  await Promise.all([
+    generateCompressedAsset(toolchainSource, compressedToolchainSource),
+    generateCompressedAsset(clangdWasmSource, compressedClangdWasmSource),
+  ]);
+}
+
 function localRuntimeAssets(): Plugin {
-  let compressedToolchainPreparation: Promise<void> | undefined;
-  const prepareCompressedToolchain = () => {
-    compressedToolchainPreparation ??= generateCompressedToolchain().catch((error) => {
-      compressedToolchainPreparation = undefined;
+  let runtimeAssetPreparation: Promise<void> | undefined;
+  const prepareRuntimeAssets = () => {
+    runtimeAssetPreparation ??= generateCompressedRuntimeAssets().catch((error) => {
+      runtimeAssetPreparation = undefined;
       throw error;
     });
-    return compressedToolchainPreparation;
+    return runtimeAssetPreparation;
   };
 
   return {
     name: "mainly-c-local-runtime-assets",
     buildStart() {
-      return prepareCompressedToolchain();
+      return prepareRuntimeAssets();
     },
     configureServer(server) {
       server.middlewares.use((request, response, next) => {
@@ -106,8 +133,11 @@ function localRuntimeAssets(): Plugin {
         }
 
         void (async () => {
-          if (asset.source === compressedToolchainSource) {
-            await prepareCompressedToolchain();
+          if (
+            asset.source === compressedToolchainSource ||
+            asset.source === compressedClangdWasmSource
+          ) {
+            await prepareRuntimeAssets();
           }
           if (!fs.existsSync(asset.source)) {
             response.statusCode = 404;
@@ -153,7 +183,7 @@ function localRuntimeAssets(): Plugin {
       });
     },
     async closeBundle() {
-      await prepareCompressedToolchain();
+      await prepareRuntimeAssets();
       for (const asset of localAssets.values()) {
         if (!fs.existsSync(asset.source)) {
           throw new Error(`Missing local runtime asset: ${asset.source}`);

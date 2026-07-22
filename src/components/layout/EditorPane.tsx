@@ -21,6 +21,10 @@ interface EditorPaneProps {
   onChange: (content: string) => void;
   onSelectFile: (id: string) => void;
   onCloseFile: (id: string) => void;
+  onOpenFileAtPosition: (
+    fileName: string,
+    position: MonacoEditor.IPosition,
+  ) => boolean;
 }
 
 export function EditorPane({
@@ -36,6 +40,7 @@ export function EditorPane({
   onChange,
   onSelectFile,
   onCloseFile,
+  onOpenFileAtPosition,
 }: EditorPaneProps) {
   const readOnly = Boolean(file && textFileReadOnly && !isSourceCodeFileName(file.name));
   return (
@@ -106,6 +111,7 @@ export function EditorPane({
               editorRef.current = editor;
               onEditorReady();
             }}
+            onOpenFileAtPosition={onOpenFileAtPosition}
           />
         )}
       </div>

@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "clang:prepare": "pwsh -NoProfile -File toolchain/clang-22/scripts/prepare-package.ps1",
     "clang:build": "pwsh -NoProfile -File toolchain/clang-22/scripts/build-package.ps1",
+    "clangd:prepare": "pwsh -NoProfile -File toolchain/clangd-21/scripts/prepare-package.ps1",
     "typecheck": "tsc --noEmit",
     "test:clang:native": "pwsh -NoProfile -File toolchain/clang-22/scripts/verify-package.ps1",
     "test:clang:browser": "node toolchain/clang-22/tests/browser-smoke.mjs",
