@@ -33,7 +33,6 @@ int main(void) {
     char name[64];
 
     printf("What is your name? ");
-    fflush(stdout);
 
     if (fgets(name, sizeof name, stdin) == NULL) {
         return 1;

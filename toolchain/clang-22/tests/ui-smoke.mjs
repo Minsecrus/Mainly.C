@@ -150,11 +150,11 @@ async function run() {
     await page.locator("[data-terminal-notice]").waitFor({ state: "visible", timeout: 5_000 });
     console.log("[ui-smoke] run disabled while the terminal shows initialization progress");
 
-    const moreButton = page.getByRole("button", { name: "更多操作" });
-    if ((await moreButton.evaluate((element) => getComputedStyle(element).cursor)) !== "pointer") {
+    const settingsButton = page.getByRole("button", { name: "设置" });
+    if ((await settingsButton.evaluate((element) => getComputedStyle(element).cursor)) !== "pointer") {
       throw new Error("Enabled icon button does not use the pointer cursor");
     }
-    await moreButton.click();
+    await settingsButton.click();
     const aboutMenuItem = page.getByRole("menuitem", { name: "关于" });
     if ((await aboutMenuItem.evaluate((element) => getComputedStyle(element).cursor)) !== "pointer") {
       throw new Error("Menu item does not use the pointer cursor");
@@ -214,7 +214,7 @@ async function run() {
     await page.getByRole("menuitemradio", { name: /每 10 秒/ }).waitFor({ state: "visible" });
     await page.keyboard.press("Escape");
 
-    console.log("[ui-smoke] select C11 and run an interactive C program");
+    console.log("[ui-smoke] run an unflushed prompt with canonical input echo and editing");
     await runButton.click();
     await page.waitForFunction(
       () => document.querySelector(".xterm-rows")?.textContent?.includes("What is your name?"),
@@ -222,13 +222,27 @@ async function run() {
       { timeout: 25_000 },
     );
     await page.locator(".xterm-helper-textarea").click();
-    await page.keyboard.type("Ada");
+    await page.keyboard.type("Adx");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.type("a");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(
-      () => document.querySelector(".xterm-rows")?.textContent?.includes("Hello, Ada"),
-      undefined,
-      { timeout: 10_000 },
-    );
+    try {
+      await page.waitForFunction(
+        () => document.querySelector(".xterm-rows")?.textContent?.includes("Hello, Ada"),
+        undefined,
+        { timeout: 10_000 },
+      );
+    } catch (error) {
+      const terminal = await page.locator(".xterm-rows").textContent();
+      const terminalRows = await page.locator(".xterm-rows > div").allTextContents();
+      await page.getByRole("tab", { name: "编译日志" }).click();
+      const logs = await page.locator('[role="tabpanel"][data-state="active"]').textContent();
+      console.error(
+        "[ui-smoke:input-timeout]",
+        JSON.stringify({ terminal, terminalRows, logs }, null, 2),
+      );
+      throw error;
+    }
     try {
       await page.getByRole("button", { name: "运行当前文件" }).waitFor({
         state: "visible",
@@ -247,6 +261,9 @@ async function run() {
     const terminalText = await page.locator(".xterm-rows").textContent();
     if (!terminalText?.includes("C11") || !terminalText.includes("clang 22.1.0")) {
       throw new Error(`Terminal did not report the selected C standard: ${terminalText}`);
+    }
+    if (!terminalText.includes("What is your name? Ada")) {
+      throw new Error(`Terminal did not echo and edit canonical input: ${terminalText}`);
     }
 
     console.log("[ui-smoke] create a C++ file, expose six standards, and run C++26");

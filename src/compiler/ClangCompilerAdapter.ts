@@ -69,6 +69,9 @@ static void __mainly_c_emit_exit_marker(void) {
 
 __attribute__((constructor))
 static void __mainly_c_initialize_runtime(void) {
+    /* Streamed browser stdio must expose prompts before the program blocks for input. */
+    (void)setvbuf(stdout, NULL, _IONBF, 0);
+    (void)setvbuf(stderr, NULL, _IONBF, 0);
     (void)chdir("${VIRTUAL_WORKSPACE_PATH}");
     (void)atexit(__mainly_c_emit_exit_marker);
 }
