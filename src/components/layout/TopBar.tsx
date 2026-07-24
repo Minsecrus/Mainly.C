@@ -23,12 +23,14 @@ interface TopBarProps {
   languageStandard?: LanguageStandard;
   languageStandardDisabled?: boolean;
   autoCompletionEnabled: boolean;
+  strictCompilationEnabled: boolean;
   onRun: () => void;
   onStop: () => void;
   onAutoRunIntervalChange: (interval: AutoRunInterval) => void;
   onRunConfigurationChange: (configuration: RunConfiguration) => void;
   onLanguageStandardChange: (standard: LanguageStandard) => void;
   onAutoCompletionEnabledChange: (enabled: boolean) => void;
+  onStrictCompilationEnabledChange: (enabled: boolean) => void;
   onClearOutput: () => void;
   onResetLayout: () => void;
   onShowShortcuts: () => void;
@@ -44,12 +46,14 @@ export function TopBar({
   languageStandard,
   languageStandardDisabled = false,
   autoCompletionEnabled,
+  strictCompilationEnabled,
   onRun,
   onStop,
   onAutoRunIntervalChange,
   onRunConfigurationChange,
   onLanguageStandardChange,
   onAutoCompletionEnabledChange,
+  onStrictCompilationEnabledChange,
   onClearOutput,
   onResetLayout,
   onShowShortcuts,
@@ -104,6 +108,20 @@ export function TopBar({
                 <span className="flex-1">自动补全</span>
                 <span className="ml-4 text-[10px] text-neutral-400">
                   {autoCompletionEnabled ? "已开启" : "已关闭"}
+                </span>
+              </MenuCheckboxItem>
+              <MenuSeparator />
+              <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-neutral-400 uppercase">
+                编译器
+              </DropdownMenu.Label>
+              <MenuCheckboxItem
+                checked={strictCompilationEnabled}
+                onCheckedChange={(checked) => onStrictCompilationEnabledChange(checked === true)}
+                onSelect={(event) => event.preventDefault()}
+              >
+                <span className="flex-1">严格编译</span>
+                <span className="ml-4 text-[10px] text-neutral-400">
+                  {strictCompilationEnabled ? "已开启" : "已关闭"}
                 </span>
               </MenuCheckboxItem>
               <MenuSeparator />

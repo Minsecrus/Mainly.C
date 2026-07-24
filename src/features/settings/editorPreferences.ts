@@ -1,11 +1,13 @@
 export interface EditorPreferences {
   autoCompletion: boolean;
+  strictCompilation: boolean;
 }
 
 const STORAGE_KEY = "mainly.c.editor-preferences.v1";
 
 export const DEFAULT_EDITOR_PREFERENCES: EditorPreferences = {
   autoCompletion: false,
+  strictCompilation: true,
 };
 
 export function loadEditorPreferences(): EditorPreferences {
@@ -15,6 +17,9 @@ export function loadEditorPreferences(): EditorPreferences {
       autoCompletion: typeof parsed?.autoCompletion === "boolean"
         ? parsed.autoCompletion
         : DEFAULT_EDITOR_PREFERENCES.autoCompletion,
+      strictCompilation: typeof parsed?.strictCompilation === "boolean"
+        ? parsed.strictCompilation
+        : DEFAULT_EDITOR_PREFERENCES.strictCompilation,
     };
   } catch {
     return { ...DEFAULT_EDITOR_PREFERENCES };

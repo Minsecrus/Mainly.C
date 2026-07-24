@@ -36,11 +36,16 @@ const DEFAULT_COMPILER_FLAGS = [
   "-fdiagnostics-color=always",
   "-g3",
   "-D_DEBUG",
+  "-pipe",
+  "-finput-charset=UTF-8",
+  "-fexec-charset=UTF-8",
+] as const;
+
+const STRICT_COMPILER_FLAGS = [
   "-Wall",
   "-Wextra",
   "-Werror",
   "-pedantic",
-  "-pipe",
   "-Wshadow",
   "-Wconversion",
   "-Wfloat-equal",
@@ -49,8 +54,6 @@ const DEFAULT_COMPILER_FLAGS = [
   "-Wwrite-strings",
   "-Wswitch-default",
   "-Wswitch-enum",
-  "-finput-charset=UTF-8",
-  "-fexec-charset=UTF-8",
 ] as const;
 
 const DEFAULT_LINKER_FLAGS = ["-lm"] as const;
@@ -123,6 +126,7 @@ export interface CompileOptions {
   source: string | Uint8Array;
   standard?: LanguageStandard;
   interactive?: boolean;
+  strictCompilation?: boolean;
   additionalArguments?: readonly string[];
 }
 
@@ -271,6 +275,7 @@ export class ClangCompilerAdapter {
         "-x",
         language === "cpp" ? "c++" : "c",
         ...DEFAULT_COMPILER_FLAGS,
+        ...(options.strictCompilation === false ? [] : STRICT_COMPILER_FLAGS),
         ...(language === "cpp" ? ["-fno-exceptions"] : []),
         ...(options.interactive
           ? ["-include", `${VIRTUAL_WORKSPACE_PATH}/${INTERACTIVE_RUNTIME_HEADER}`]

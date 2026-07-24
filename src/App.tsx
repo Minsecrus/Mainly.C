@@ -194,8 +194,12 @@ export default function App() {
   }, [languageStandards]);
 
   useEffect(() => {
-    clangdClient.syncWorkspace(workspace.files, languageStandards);
-  }, [languageStandards, workspace.files]);
+    clangdClient.syncWorkspace(
+      workspace.files,
+      languageStandards,
+      editorPreferences.strictCompilation,
+    );
+  }, [editorPreferences.strictCompilation, languageStandards, workspace.files]);
 
   useEffect(() => clangdClient.subscribeDiagnostics((fileName, diagnostics) => {
     setLspDiagnosticsByFileName((current) => ({ ...current, [fileName]: diagnostics }));
@@ -345,6 +349,7 @@ export default function App() {
         source,
         standard: activeLanguageStandard,
         interactive: true,
+        strictCompilation: editorPreferences.strictCompilation,
       });
       setDiagnosticsByFile((current) => ({ ...current, [file.id]: result.diagnostics }));
 
@@ -410,6 +415,7 @@ export default function App() {
     activeLanguageStandard,
     activeSourceLanguage,
     appendLog,
+    editorPreferences.strictCompilation,
     reportRuntimeError,
     runConfiguration,
     workspace.files,
@@ -512,6 +518,16 @@ export default function App() {
       saveEditorPreferences(next);
       return next;
     });
+  }
+
+  function changeStrictCompilationEnabled(enabled: boolean): void {
+    setEditorPreferences((current) => {
+      const next = { ...current, strictCompilation: enabled };
+      saveEditorPreferences(next);
+      return next;
+    });
+    setDiagnosticsByFile({});
+    if (!busy) setRunState("idle");
   }
 
   useEffect(() => {
@@ -777,12 +793,14 @@ export default function App() {
         languageStandard={activeLanguageStandard}
         languageStandardDisabled={busy}
         autoCompletionEnabled={editorPreferences.autoCompletion}
+        strictCompilationEnabled={editorPreferences.strictCompilation}
         onRun={() => void runCurrentFile()}
         onStop={stopCurrentRun}
         onAutoRunIntervalChange={changeAutoRunInterval}
         onRunConfigurationChange={changeRunConfiguration}
         onLanguageStandardChange={changeLanguageStandard}
         onAutoCompletionEnabledChange={changeAutoCompletionEnabled}
+        onStrictCompilationEnabledChange={changeStrictCompilationEnabled}
         onClearOutput={clearOutput}
         onResetLayout={resetLayout}
         onShowShortcuts={() => setInfoDialog("shortcuts")}

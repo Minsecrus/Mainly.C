@@ -20,6 +20,7 @@ export type ClangdStatus = "idle" | "loading" | "ready" | "error";
 interface WorkspaceState {
   files: Array<Pick<SourceFile, "name" | "content">>;
   standards: LanguageStandardPreferences;
+  strictCompilation: boolean;
 }
 
 interface OpenDocument {
@@ -62,6 +63,7 @@ const WORKSPACE_URI = "file:///workspace";
 const DEFAULT_WORKSPACE: WorkspaceState = {
   files: [],
   standards: { c: "c23", cpp: "c++23" },
+  strictCompilation: true,
 };
 
 function languageStandardFlag(standard: string): string {
@@ -74,8 +76,6 @@ function strictDiagnosticFlags(): string[] {
     "-Wextra",
     "-Werror",
     "-pedantic",
-    // clangd's incremental preamble patch can otherwise report a non-empty file as empty.
-    "-Wno-empty-translation-unit",
     "-Wshadow",
     "-Wconversion",
     "-Wfloat-equal",
@@ -91,6 +91,7 @@ function compileCommand(
   fileName: string,
   language: SourceLanguage,
   standards: LanguageStandardPreferences,
+  strictCompilation: boolean,
 ): string[] {
   const filePath = `${WORKSPACE_PATH}/${fileName}`;
   const standard = languageStandardFlag(standards[language]);
@@ -100,7 +101,9 @@ function compileCommand(
     "--target=wasm32-wasi",
     "-isystem/usr/include",
     "-isystem/usr/include/wasm32-wasi",
-    ...strictDiagnosticFlags(),
+    // clangd's incremental preamble patch can otherwise report a non-empty file as empty.
+    "-Wno-empty-translation-unit",
+    ...(strictCompilation ? strictDiagnosticFlags() : []),
   ];
   if (language === "cpp") {
     common.splice(3, 0, "-isystem/usr/include/c++/v1", "-isystem/usr/include/wasm32-wasi/c++/v1");
@@ -196,6 +199,7 @@ class ClangdClient {
   syncWorkspace(
     files: readonly Pick<SourceFile, "name" | "content">[],
     standards: LanguageStandardPreferences,
+    strictCompilation = true,
   ): void {
     const sourceFiles = files.filter((file) => sourceLanguageForFileName(file.name) !== undefined);
     const previousNames = new Set(this.#workspace.files.map((file) => file.name));
@@ -203,6 +207,7 @@ class ClangdClient {
     this.#workspace = {
       files: sourceFiles.map((file) => ({ name: file.name, content: file.content })),
       standards: { ...standards },
+      strictCompilation,
     };
 
     for (const oldName of previousNames) {
@@ -213,6 +218,7 @@ class ClangdClient {
     const nextSignature = JSON.stringify({
       files: sourceFiles.map((file) => file.name),
       standards,
+      strictCompilation,
     });
     if (nextSignature !== this.#configurationSignature) {
       this.#configurationSignature = nextSignature;
@@ -374,7 +380,12 @@ class ClangdClient {
       },
       initializationOptions: {
         clangdFileStatus: true,
-        fallbackFlags: compileCommand("fallback.cpp", "cpp", this.#workspace.standards).slice(1, -1),
+        fallbackFlags: compileCommand(
+          "fallback.cpp",
+          "cpp",
+          this.#workspace.standards,
+          this.#workspace.strictCompilation,
+        ).slice(1, -1),
         compilationDatabaseChanges: this.#compilationDatabaseChanges(),
       },
       workspaceFolders: [{ uri: WORKSPACE_URI, name: "Mainly.C" }],
@@ -415,7 +426,12 @@ class ClangdClient {
       const path = `${WORKSPACE_PATH}/${file.name}`;
       return [[path, {
         workingDirectory: WORKSPACE_PATH,
-        compilationCommand: compileCommand(file.name, language, this.#workspace.standards),
+        compilationCommand: compileCommand(
+          file.name,
+          language,
+          this.#workspace.standards,
+          this.#workspace.strictCompilation,
+        ),
       }]];
     }));
   }

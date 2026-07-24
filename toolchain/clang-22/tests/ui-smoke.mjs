@@ -184,7 +184,7 @@ async function run() {
     }
     await settingsButton.click();
     const settingsMenu = page.getByRole("menu", { name: "设置" });
-    const autoCompletionItem = page.getByRole("menuitemcheckbox");
+    const autoCompletionItem = page.getByRole("menuitemcheckbox", { name: /自动补全/ });
     await autoCompletionItem.click();
     await settingsMenu.waitFor({ state: "visible" });
     if ((await autoCompletionItem.getAttribute("aria-checked")) !== "true") {
@@ -194,6 +194,20 @@ async function run() {
     await settingsMenu.waitFor({ state: "visible" });
     if ((await autoCompletionItem.getAttribute("aria-checked")) !== "false") {
       throw new Error("Automatic completion was not disabled from the settings menu");
+    }
+    const strictCompilationItem = page.getByRole("menuitemcheckbox", { name: /严格编译/ });
+    if ((await strictCompilationItem.getAttribute("aria-checked")) !== "true") {
+      throw new Error("Strict compilation was not enabled by default");
+    }
+    await strictCompilationItem.click();
+    await settingsMenu.waitFor({ state: "visible" });
+    if ((await strictCompilationItem.getAttribute("aria-checked")) !== "false") {
+      throw new Error("Strict compilation was not disabled from the settings menu");
+    }
+    await strictCompilationItem.click();
+    await settingsMenu.waitFor({ state: "visible" });
+    if ((await strictCompilationItem.getAttribute("aria-checked")) !== "true") {
+      throw new Error("Strict compilation was not re-enabled from the settings menu");
     }
     const aboutMenuItem = page.getByRole("menuitem", { name: "关于" });
     if ((await aboutMenuItem.evaluate((element) => getComputedStyle(element).cursor)) !== "pointer") {
