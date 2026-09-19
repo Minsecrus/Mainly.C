@@ -1,6 +1,8 @@
+import { useState } from "react";
 import {
   CircleHelp,
   Keyboard,
+  Palette,
   RotateCcw,
   Settings,
   Trash2,
@@ -13,6 +15,7 @@ import type { AutoRunInterval, RunState } from "../../types/ui.js";
 import { MenuCheckboxItem, MenuItem, MenuSeparator, menuContentClass } from "../ui/Menu.js";
 import { LanguageStandardControl } from "./LanguageStandardControl.js";
 import { RunControl } from "./RunControl.js";
+import { ThemeColorDialog } from "../ui/ThemeColorDialog.js";
 
 interface TopBarProps {
   runState: RunState;
@@ -59,10 +62,11 @@ export function TopBar({
   onShowShortcuts,
   onShowAbout,
 }: TopBarProps) {
+  const [themeOpen, setThemeOpen] = useState(false);
   return (
-    <header className="flex h-11 shrink-0 items-center border-b border-white/[0.12] bg-[#101010] px-2">
+    <header className="flex h-11 shrink-0 items-center border-b border-border bg-panel px-2">
       <div className="flex h-8 items-center px-1.5">
-        <span className="text-[17px] font-bold leading-none tracking-[-0.055em] text-white">Mainly.C</span>
+        <span className="text-[17px] font-bold leading-none tracking-[-0.055em] text-fg">Mainly.C</span>
       </div>
 
       <div className="ml-auto flex items-center gap-1.5">
@@ -89,7 +93,7 @@ export function TopBar({
             <button
               type="button"
               aria-label="设置"
-              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-neutral-300 outline-none transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:ring-1 focus-visible:ring-neutral-300"
+              className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-secondary outline-none transition-colors hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-fg"
             >
               <Settings className="size-3.5" />
               <span>设置</span>
@@ -97,7 +101,9 @@ export function TopBar({
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content side="bottom" align="end" sideOffset={5} className={menuContentClass}>
-              <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-neutral-400 uppercase">
+              <MenuItem icon={<Palette className="size-3.5" />} onSelect={() => setThemeOpen(true)}>主题色</MenuItem>
+              <MenuSeparator />
+              <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted uppercase">
                 编辑器
               </DropdownMenu.Label>
               <MenuCheckboxItem
@@ -106,12 +112,12 @@ export function TopBar({
                 onSelect={(event) => event.preventDefault()}
               >
                 <span className="flex-1">自动补全</span>
-                <span className="ml-4 text-[10px] text-neutral-400">
+                <span className="ml-4 text-[10px] text-muted">
                   {autoCompletionEnabled ? "已开启" : "已关闭"}
                 </span>
               </MenuCheckboxItem>
               <MenuSeparator />
-              <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-neutral-400 uppercase">
+              <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted uppercase">
                 编译器
               </DropdownMenu.Label>
               <MenuCheckboxItem
@@ -120,7 +126,7 @@ export function TopBar({
                 onSelect={(event) => event.preventDefault()}
               >
                 <span className="flex-1">严格编译</span>
-                <span className="ml-4 text-[10px] text-neutral-400">
+                <span className="ml-4 text-[10px] text-muted">
                   {strictCompilationEnabled ? "已开启" : "已关闭"}
                 </span>
               </MenuCheckboxItem>
@@ -134,6 +140,7 @@ export function TopBar({
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </div>
+      <ThemeColorDialog open={themeOpen} onOpenChange={setThemeOpen} />
     </header>
   );
 }

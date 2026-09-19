@@ -280,7 +280,7 @@ export default function App() {
     (cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       appendLog({ source: "terminal", event: "runtime:error", message: error.message });
-      terminalRef.current?.writeln(`\r\n\x1b[2m[运行时错误] ${error.message}\x1b[0m`);
+      terminalRef.current?.writeln(`\r\n\x1b[90m[运行时错误] ${error.message}\x1b[0m`);
       setRunState("error");
       sessionRef.current = undefined;
       setSession(undefined);
@@ -306,7 +306,7 @@ export default function App() {
       if (message === previousVirtualFileSyncError) return;
       previousVirtualFileSyncError = message;
       terminalRef.current?.writeln(
-        `\r\n\x1b[2m[虚拟文件] 同步失败：${terminalText(message)}\x1b[0m`,
+        `\r\n\x1b[90m[虚拟文件] 同步失败：${terminalText(message)}\x1b[0m`,
       );
     };
     const syncRuntimeTextFiles = (virtualFiles: Readonly<Record<string, string>>) => {
@@ -332,7 +332,7 @@ export default function App() {
     terminalRef.current?.writeln(
       `\x1b[1m${file.name}\x1b[0m  ·  ${standardLabel}  ·  ${compilerDriver} 22.1.0`,
     );
-    terminalRef.current?.writeln("\x1b[2m编译和运行均在当前浏览器中完成。\x1b[0m\r\n");
+    terminalRef.current?.writeln("\x1b[90m编译和运行均在当前浏览器中完成。\x1b[0m\r\n");
 
     try {
       const programArguments = parseProgramArguments(runConfiguration.argumentText);
@@ -343,7 +343,7 @@ export default function App() {
       });
 
       setRunState("compiling");
-      terminalRef.current?.writeln(`\x1b[2m[${compilerDriver}] 正在编译…\x1b[0m`);
+      terminalRef.current?.writeln(`\x1b[90m[${compilerDriver}] 正在编译…\x1b[0m`);
       const result = await adapter.compile({
         fileName: file.name,
         source,
@@ -362,7 +362,7 @@ export default function App() {
       }
 
       terminalRef.current?.writeln(
-        `\x1b[2m[${compilerDriver}] 编译完成 · ${result.elapsedMs}ms\x1b[0m\r\n`,
+        `\x1b[90m[${compilerDriver}] 编译完成 · ${result.elapsedMs}ms\x1b[0m\r\n`,
       );
       const virtualFiles = Object.fromEntries(
         workspace.files.map((workspaceFile) => [workspaceFile.name, workspaceFile.content]),
@@ -394,12 +394,12 @@ export default function App() {
           setSession((current) => (current === nextSession ? undefined : current));
           setRunState(output.ok ? "success" : "error");
           terminalRef.current?.writeln(
-            `\r\n\x1b[2m[进程结束] 退出码 ${output.code}\x1b[0m`,
+            `\r\n\x1b[90m[进程结束] 退出码 ${output.code}\x1b[0m`,
           );
           const syncedCount = syncedTextFileNames.size;
           if (syncedCount > 0) {
             terminalRef.current?.writeln(
-              `\x1b[2m[虚拟文件] 已同步 ${syncedCount} 个文本文件\x1b[0m`,
+              `\x1b[90m[虚拟文件] 已同步 ${syncedCount} 个文本文件\x1b[0m`,
             );
           }
         })
@@ -443,7 +443,7 @@ export default function App() {
       await current.terminate();
     } finally {
       setRunState("stopped");
-      terminalRef.current?.writeln("\x1b[2m[进程已终止]\x1b[0m");
+      terminalRef.current?.writeln("\x1b[90m[进程已终止]\x1b[0m");
     }
   }, []);
 
@@ -731,35 +731,35 @@ export default function App() {
       return (
         <div className="space-y-4">
           <div className="space-y-2">
-            <p className="font-medium text-neutral-100">Mainly.C 是面向 C 与 C++ 学习者的纯浏览器多文件编辑器。</p>
+            <p className="font-medium text-fg">Mainly.C 是面向 C 与 C++ 学习者的纯浏览器多文件编辑器。</p>
             <p>代码在当前浏览器中完成编译、链接和运行，不会发送到远程编译服务器。</p>
           </div>
 
-          <dl className="grid grid-cols-[78px_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-white/[0.12] bg-white/[0.045] px-3 py-2.5 text-[11px]">
-            <dt className="text-neutral-400">C 标准</dt><dd className="text-neutral-100">C99 / C11 / C23</dd>
-            <dt className="text-neutral-400">C++ 标准</dt><dd className="text-neutral-100">C++11 / 14 / 17 / 20 / 23 / 26</dd>
-            <dt className="text-neutral-400">编译器</dt><dd className="text-neutral-100">Clang / LLD 22.1.0</dd>
-            <dt className="text-neutral-400">C 标准库</dt><dd className="text-neutral-100">WASIX libc v2026-07-03.1（C23 部分支持）</dd>
-            <dt className="text-neutral-400">C++ 标准库</dt><dd className="text-neutral-100">libc++ 22.1.0（WASIX）</dd>
-            <dt className="text-neutral-400">格式化器</dt><dd className="text-neutral-100">Clang-format 22.1.8</dd>
-            <dt className="text-neutral-400">语言服务</dt><dd className="text-neutral-100">clangd 21.1.0（WebAssembly）</dd>
-            <dt className="text-neutral-400">编译目标</dt><dd className="font-mono text-[10px] text-neutral-100">wasm32-wasip1 + WASIX</dd>
-            <dt className="text-neutral-400">编辑器</dt><dd className="text-neutral-100">Monaco Editor 0.53.0</dd>
-            <dt className="text-neutral-400">运行时</dt><dd className="text-neutral-100">Wasmer SDK 0.8.0</dd>
+          <dl className="grid grid-cols-[78px_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-border bg-hover px-3 py-2.5 text-[11px]">
+            <dt className="text-muted">C 标准</dt><dd className="text-fg">C99 / C11 / C23</dd>
+            <dt className="text-muted">C++ 标准</dt><dd className="text-fg">C++11 / 14 / 17 / 20 / 23 / 26</dd>
+            <dt className="text-muted">编译器</dt><dd className="text-fg">Clang / LLD 22.1.0</dd>
+            <dt className="text-muted">C 标准库</dt><dd className="text-fg">WASIX libc v2026-07-03.1（C23 部分支持）</dd>
+            <dt className="text-muted">C++ 标准库</dt><dd className="text-fg">libc++ 22.1.0（WASIX）</dd>
+            <dt className="text-muted">格式化器</dt><dd className="text-fg">Clang-format 22.1.8</dd>
+            <dt className="text-muted">语言服务</dt><dd className="text-fg">clangd 21.1.0（WebAssembly）</dd>
+            <dt className="text-muted">编译目标</dt><dd className="font-mono text-[10px] text-fg">wasm32-wasip1 + WASIX</dd>
+            <dt className="text-muted">编辑器</dt><dd className="text-fg">Monaco Editor 0.53.0</dd>
+            <dt className="text-muted">运行时</dt><dd className="text-fg">Wasmer SDK 0.8.0</dd>
           </dl>
 
-          <div className="space-y-2 text-neutral-300">
+          <div className="space-y-2 text-secondary">
             <p>首次打开时，编辑器显示后会在后台加载本地 Clang 工具链与 clangd 语言服务；编译工具链准备完成前运行按钮保持禁用，clangd 则独立加载并在就绪后接管语义能力。源代码通过 LSP 在浏览器内完成实时分析，文件内容、标准输入输出和诊断信息不会发送到远程服务器。</p>
             <p>每次只构建当前文件。C23 语言模式可用，但 C23 标准库仍为部分支持；C++23 起支持 &lt;print&gt; 与 std::println，C++17 起支持常用 std::filesystem 操作。C++ 异常未启用，std::filesystem::space() 因 WASIX statvfs 限制会报告不支持，C++26 为实验性草案模式。程序运行时，文本文件由虚拟文件系统管理并每 100ms 同步到工作区，期间在编辑器中保持只读；退出或手动终止前会最终同步，失败时在终端提示。</p>
           </div>
 
-          <div className="flex items-center justify-between border-t border-white/[0.1] pt-3 text-[10px] text-neutral-400">
+          <div className="flex items-center justify-between border-t border-border pt-3 text-[10px] text-muted">
             <span>© 2026 Minsecrus · MIT License</span>
             <a
               href="https://github.com/Minsecrus/Mainly.C"
               target="_blank"
               rel="noreferrer"
-              className="text-neutral-200 underline decoration-white/25 underline-offset-2 hover:text-white"
+              className="text-fg underline decoration-border-strong underline-offset-2 hover:text-fg"
             >
               GitHub
             </a>
@@ -783,7 +783,7 @@ export default function App() {
   const dialogTitle = infoDialog === "about" ? "关于" : "键盘快捷键";
 
   return (
-    <div className="flex h-dvh min-h-[480px] min-w-[720px] flex-col overflow-hidden bg-[#090909] text-neutral-200">
+    <div className="flex h-dvh min-h-[480px] min-w-[720px] flex-col overflow-hidden bg-inset text-fg">
       <TopBar
         runState={runState}
         runDisabled={!environmentReady || !activeEditorFile || !activeFileRunnable}
@@ -866,9 +866,9 @@ export default function App() {
               aria-orientation="horizontal"
               aria-label="调整输出面板高度"
               onPointerDown={startPanelResize}
-              className="group relative z-10 h-1 shrink-0 cursor-row-resize bg-[#1f1f1f]"
+              className="group relative z-10 h-1 shrink-0 cursor-row-resize bg-border"
             >
-              <div className="absolute inset-x-0 -top-0.5 h-1.5 transition-colors group-hover:bg-white/10" />
+              <div className="absolute inset-x-0 -top-0.5 h-1.5 transition-colors group-hover:bg-hover" />
             </div>
           )}
           <div

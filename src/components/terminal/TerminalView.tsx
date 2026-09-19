@@ -10,6 +10,8 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
 import type { InteractiveTerminalSession } from "../../compiler/InteractiveTerminalSession.js";
+import { useTheme } from "../../features/theme/ThemeProvider.js";
+import { terminalTheme } from "../../features/theme/editorThemes.js";
 
 export interface TerminalViewHandle {
   clear: () => void;
@@ -32,6 +34,9 @@ function TerminalViewComponent(
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const sessionRef = useRef(session);
+  const { palette } = useTheme();
+  const paletteRef = useRef(palette);
+  paletteRef.current = palette;
 
   useEffect(() => {
     sessionRef.current = session;
@@ -52,29 +57,7 @@ function TerminalViewComponent(
       minimumContrastRatio: 4.5,
       scrollback: 2_000,
       allowTransparency: true,
-      theme: {
-        background: "#101010",
-        foreground: "#e5e5e5",
-        cursor: "#f5f5f5",
-        cursorAccent: "#101010",
-        selectionBackground: "#52525288",
-        black: "#171717",
-        red: "#d4d4d4",
-        green: "#b8b8b8",
-        yellow: "#a3a3a3",
-        blue: "#d4d4d4",
-        magenta: "#b8b8b8",
-        cyan: "#e5e5e5",
-        white: "#f5f5f5",
-        brightBlack: "#737373",
-        brightRed: "#f5f5f5",
-        brightGreen: "#e5e5e5",
-        brightYellow: "#d4d4d4",
-        brightBlue: "#e5e5e5",
-        brightMagenta: "#d4d4d4",
-        brightCyan: "#f5f5f5",
-        brightWhite: "#ffffff",
-      },
+      theme: terminalTheme(paletteRef.current),
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -122,6 +105,10 @@ function TerminalViewComponent(
     };
   }, [onInputError, onInterrupt]);
 
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = terminalTheme(palette);
+  }, [palette]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -140,7 +127,7 @@ function TerminalViewComponent(
         <div
           role="status"
           data-terminal-notice
-          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#101010] px-6 font-mono text-[11px] text-neutral-300"
+          className="pointer-events-none absolute inset-0 flex items-center justify-center bg-panel px-6 font-mono text-[11px] text-secondary"
         >
           {notice}
         </div>

@@ -38,7 +38,7 @@ export function LanguageStandardControl({
           type="button"
           aria-label="选择语言标准"
           disabled={disabled || !language || !standard}
-          className="flex h-8 min-w-[72px] cursor-pointer items-center justify-center gap-1.5 rounded-md border border-white/[0.12] bg-white/[0.045] px-2.5 text-[11px] font-semibold text-neutral-200 outline-none transition hover:bg-white/[0.09] focus-visible:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-45"
+          className="flex h-8 min-w-[72px] cursor-pointer items-center justify-center gap-1.5 rounded-md border border-border bg-hover px-2.5 text-[11px] font-semibold text-fg outline-none transition hover:bg-hover focus-visible:bg-hover disabled:cursor-not-allowed disabled:opacity-45"
         >
           <span>{label}</span>
           <ChevronDown className="size-3" strokeWidth={2} />
@@ -51,7 +51,7 @@ export function LanguageStandardControl({
           sideOffset={5}
           className={menuContentClass}
         >
-          <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-neutral-400 uppercase">
+          <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted uppercase">
             {language === "cpp" ? "C++ 语言标准" : "C 语言标准"}
           </DropdownMenu.Label>
           <DropdownMenu.RadioGroup
@@ -64,7 +64,7 @@ export function LanguageStandardControl({
               <MenuRadioItem key={option} value={option}>
                 <span className="flex-1">{languageStandardLabel(option)}</span>
                 {option === "c++26" && (
-                  <span className="text-[10px] text-neutral-400">实验性</span>
+                  <span className="text-[10px] text-muted">实验性</span>
                 )}
               </MenuRadioItem>
             ))}

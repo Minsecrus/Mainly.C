@@ -17,23 +17,23 @@ export function ActivityRail({
   onTogglePanel,
 }: ActivityRailProps) {
   return (
-    <aside className="flex w-11 shrink-0 flex-col items-center border-r border-white/[0.12] bg-[#111111] py-1.5">
+    <aside className="flex w-11 shrink-0 flex-col items-center border-r border-border bg-panel py-1.5">
       <IconButton
         label="文件"
         side="right"
         onClick={onToggleExplorer}
-        className={cn("relative size-9 rounded-none", explorerOpen && "text-neutral-100")}
+        className={cn("relative size-9 rounded-none", explorerOpen && "text-fg")}
       >
-        {explorerOpen && <span className="absolute inset-y-1 left-0 w-px bg-neutral-200" />}
+        {explorerOpen && <span className="absolute inset-y-1 left-0 w-px bg-fg" />}
         <Files className="size-[18px]" strokeWidth={1.7} />
       </IconButton>
       <IconButton
         label="输出面板"
         side="right"
         onClick={onTogglePanel}
-        className={cn("relative size-9 rounded-none", panelOpen && "text-neutral-100")}
+        className={cn("relative size-9 rounded-none", panelOpen && "text-fg")}
       >
-        {panelOpen && <span className="absolute inset-y-1 left-0 w-px bg-neutral-200" />}
+        {panelOpen && <span className="absolute inset-y-1 left-0 w-px bg-fg" />}
         <PanelBottom className="size-[18px]" strokeWidth={1.7} />
       </IconButton>
     </aside>

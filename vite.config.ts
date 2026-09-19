@@ -219,6 +219,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), localRuntimeAssets()],
   server: {
     headers: isolationHeaders,
+    forwardConsole: { logLevels: ["warn", "error", "log"] },
     watch: { ignored: developmentWatchIgnores },
   },
   preview: { headers: isolationHeaders },

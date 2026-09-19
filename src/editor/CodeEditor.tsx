@@ -15,6 +15,10 @@ import {
   type ClangdStatus,
 } from "../lsp/ClangdClient.js";
 import { registerClangdProviders } from "../lsp/monacoProviders.js";
+import { attachEditorInputDebug } from "./inputDebug.js";
+import { useTheme } from "../features/theme/ThemeProvider.js";
+import { MONACO_THEME_NAME, monacoTheme } from "../features/theme/editorThemes.js";
+import type { ThemePalette } from "../features/theme/palette.js";
 import {
   clearModelCompletionContext,
   registerLanguageCompletions,
@@ -46,67 +50,9 @@ monacoGlobal.MonacoEnvironment = {
 loader.config({ monaco: localMonaco });
 
 let completionsRegistered = false;
-let themeRegistered = false;
 
-function configureMonaco(monaco: Monaco): void {
-  if (!themeRegistered) {
-    monaco.editor.defineTheme("mainly-monochrome", {
-      base: "vs-dark",
-      inherit: false,
-      colors: {
-        "editor.background": "#121212",
-        "editor.foreground": "#ffffff",
-        "editorLineNumber.foreground": "#8a8a8a",
-        "editorLineNumber.activeForeground": "#e5e5e5",
-        "editorCursor.foreground": "#f5f5f5",
-        "editor.selectionBackground": "#40404088",
-        "editor.inactiveSelectionBackground": "#30303077",
-        "editor.lineHighlightBackground": "#1b1b1b",
-        "editorIndentGuide.background1": "#383838",
-        "editorIndentGuide.activeBackground1": "#737373",
-        "editorSuggestWidget.background": "#1d1d1d",
-        "editorSuggestWidget.foreground": "#e5e5e5",
-        "editorSuggestWidget.border": "#525252",
-        "editorSuggestWidget.selectedBackground": "#3a3a3a",
-        "editorSuggestWidget.selectedForeground": "#ffffff",
-        "editorSuggestWidget.highlightForeground": "#ffffff",
-        "editorHoverWidget.background": "#1d1d1d",
-        "editorHoverWidget.foreground": "#e5e5e5",
-        "editorHoverWidget.border": "#525252",
-        "editorWidget.foreground": "#e5e5e5",
-        "input.foreground": "#f5f5f5",
-        "input.placeholderForeground": "#a3a3a3",
-        "list.hoverForeground": "#ffffff",
-        "list.activeSelectionForeground": "#ffffff",
-        "list.inactiveSelectionForeground": "#ffffff",
-        "editorError.foreground": "#f5f5f5",
-        "editorWarning.foreground": "#a3a3a3",
-        "editorOverviewRuler.border": "#00000000",
-      },
-      rules: [
-        { token: "comment", foreground: "8A8A8A", fontStyle: "italic" },
-        { token: "comment.doc", foreground: "969696", fontStyle: "italic" },
-        { token: "keyword", foreground: "F5F5F5", fontStyle: "bold" },
-        { token: "keyword.directive", foreground: "D4D4D4", fontStyle: "bold" },
-        { token: "keyword.directive.include", foreground: "E5E5E5", fontStyle: "bold" },
-        { token: "string", foreground: "BDBDBD" },
-        { token: "string.include.identifier", foreground: "D4D4D4" },
-        { token: "string.escape", foreground: "FFFFFF", fontStyle: "bold" },
-        { token: "string.invalid", foreground: "FFFFFF", fontStyle: "underline" },
-        { token: "number", foreground: "E5E5E5" },
-        { token: "type", foreground: "D4D4D4" },
-        { token: "identifier", foreground: "FFFFFF" },
-        { token: "annotation", foreground: "B8B8B8" },
-        { token: "delimiter", foreground: "A3A3A3" },
-        { token: "delimiter.bracket", foreground: "A3A3A3" },
-        { token: "delimiter.parenthesis", foreground: "B8B8B8" },
-        { token: "operator", foreground: "A3A3A3" },
-        { token: "variable", foreground: "FFFFFF" },
-        { token: "function", foreground: "FFFFFF" },
-      ],
-    });
-    themeRegistered = true;
-  }
+function configureMonaco(monaco: Monaco, palette: ThemePalette): void {
+  monaco.editor.defineTheme(MONACO_THEME_NAME, monacoTheme(palette));
   if (!completionsRegistered) {
     registerLanguageCompletions(monaco);
     registerClangdProviders(monaco as typeof localMonaco);
@@ -130,6 +76,7 @@ export function CodeEditor({
   onReady,
   onOpenFileAtPosition,
 }: CodeEditorProps) {
+  const { palette } = useTheme();
   const editorRef = useRef<StandaloneEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const decorationIdsRef = useRef<string[]>([]);
@@ -140,6 +87,7 @@ export function CodeEditor({
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    attachEditorInputDebug(editor, monaco, file.name);
     editorOpenerRef.current?.dispose();
     editorOpenerRef.current = monaco.editor.registerEditorOpener({
       openCodeEditor(source, resource, selectionOrPosition) {
@@ -170,6 +118,13 @@ export function CodeEditor({
   };
 
   useEffect(() => clangdClient.subscribeStatus(setClangdStatus), []);
+
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+    monaco.editor.defineTheme(MONACO_THEME_NAME, monacoTheme(palette));
+    monaco.editor.setTheme(MONACO_THEME_NAME);
+  }, [palette, readyEpoch]);
 
   useEffect(() => () => {
     editorOpenerRef.current?.dispose();
@@ -278,15 +233,15 @@ export function CodeEditor({
       height="100%"
       path={clangdUriForFileName(file.name)}
       language={sourceLanguageForFileName(file.name) ?? "plaintext"}
-      theme="mainly-monochrome"
+      theme={MONACO_THEME_NAME}
       value={file.content}
-      beforeMount={configureMonaco}
+      beforeMount={(monaco) => configureMonaco(monaco, palette)}
       onMount={handleMount}
       onChange={(value) => {
         if (!readOnly) onChange(value ?? "");
       }}
       loading={
-        <div className="flex h-full items-center justify-center bg-[#121212] text-xs text-neutral-300">
+        <div className="flex h-full items-center justify-center bg-canvas text-xs text-secondary">
           正在载入编辑器…
         </div>
       }
@@ -295,7 +250,9 @@ export function CodeEditor({
         readOnly,
         domReadOnly: readOnly,
         readOnlyMessage: { value: "程序运行期间，文本文件由虚拟文件系统管理并保持只读。" },
-        editContext: false,
+        // Keep native input enabled where supported; the textarea fallback can
+        // lose its browser selection after mouse clicks in Chromium.
+        editContext: true,
         fontFamily: "'Monaspace Neon', 'HarmonyOS Sans SC', ui-monospace, monospace",
         fontSize: 14,
         lineHeight: 22,

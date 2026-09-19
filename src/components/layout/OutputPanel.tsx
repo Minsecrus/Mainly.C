@@ -40,14 +40,14 @@ interface OutputPanelProps {
 
 function tabClass(active: boolean): string {
   return cn(
-    "relative flex h-full items-center gap-1.5 px-2 text-[10px] font-medium tracking-[0.06em] text-neutral-400 uppercase outline-none hover:text-white",
-    active && "text-white after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-white",
+    "relative flex h-full items-center gap-1.5 px-2 text-[10px] font-medium tracking-[0.06em] text-muted uppercase outline-none hover:text-fg",
+    active && "text-fg after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-primary-hover",
   );
 }
 
 function EmptyProblems({ runState }: { runState: RunState }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-400">
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-muted">
       {runState === "success" ? <CheckCircle2 className="size-5" strokeWidth={1.4} /> : <Info className="size-5" strokeWidth={1.4} />}
       <span className="text-[11px]">{runState === "success" ? "没有发现问题" : "运行当前文件后显示编译诊断"}</span>
     </div>
@@ -71,17 +71,17 @@ function Problems({
           type="button"
           key={`${diagnostic.fileName}:${diagnostic.line}:${diagnostic.column}:${index}`}
           onClick={() => onSelect(diagnostic)}
-          className="group flex min-h-8 w-full items-start gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-white/[0.035]"
+          className="group flex min-h-8 w-full items-start gap-2 px-3 py-1.5 text-left text-[11px] hover:bg-hover"
         >
           {diagnostic.severity === "error" ? (
-            <CircleX className="mt-0.5 size-3.5 shrink-0 text-neutral-300" />
+            <CircleX className="mt-0.5 size-3.5 shrink-0 text-secondary" />
           ) : diagnostic.severity === "warning" ? (
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-neutral-300" />
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-secondary" />
           ) : (
-            <Info className="mt-0.5 size-3.5 shrink-0 text-neutral-400" />
+            <Info className="mt-0.5 size-3.5 shrink-0 text-muted" />
           )}
-          <span className="min-w-0 flex-1 text-neutral-200 group-hover:text-white">{diagnostic.message}</span>
-          <span className="shrink-0 font-mono text-[10px] text-neutral-400">
+          <span className="min-w-0 flex-1 text-fg group-hover:text-fg">{diagnostic.message}</span>
+          <span className="shrink-0 font-mono text-[10px] text-muted">
             {diagnostic.fileName}:{diagnostic.line}:{diagnostic.column}
           </span>
         </button>
@@ -92,20 +92,20 @@ function Problems({
 
 function CompilerLogs({ logs }: { logs: UiCompilerLog[] }) {
   if (logs.length === 0) {
-    return <div className="flex h-full items-center justify-center text-[11px] text-neutral-400">尚无编译器日志</div>;
+    return <div className="flex h-full items-center justify-center text-[11px] text-muted">尚无编译器日志</div>;
   }
   return (
     <div className="h-full overflow-auto py-1 font-mono text-[10px] leading-5">
       {logs.map((log) => (
-        <div key={log.id} className="flex min-h-5 items-start gap-2 px-3 hover:bg-white/[0.025]">
-          <span className="w-16 shrink-0 text-neutral-400">
+        <div key={log.id} className="flex min-h-5 items-start gap-2 px-3 hover:bg-hover">
+          <span className="w-16 shrink-0 text-muted">
             {new Date(log.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}
           </span>
-          <span className="w-14 shrink-0 text-neutral-300">{log.source}</span>
-          <span className="text-neutral-200">{log.event}</span>
-          {log.phase && <span className="text-neutral-400">{log.phase}</span>}
-          {typeof log.elapsedMs === "number" && <span className="text-neutral-400">{log.elapsedMs}ms</span>}
-          {typeof log.exitCode === "number" && <span className="text-neutral-400">exit {log.exitCode}</span>}
+          <span className="w-14 shrink-0 text-secondary">{log.source}</span>
+          <span className="text-fg">{log.event}</span>
+          {log.phase && <span className="text-muted">{log.phase}</span>}
+          {typeof log.elapsedMs === "number" && <span className="text-muted">{log.elapsedMs}ms</span>}
+          {typeof log.exitCode === "number" && <span className="text-muted">exit {log.exitCode}</span>}
         </div>
       ))}
     </div>
@@ -136,9 +136,9 @@ export function OutputPanel({
     <Tabs.Root
       value={activeTab}
       onValueChange={(value) => onTabChange(value as OutputTab)}
-      className="flex h-full min-h-0 flex-col border-t border-white/[0.12] bg-[#101010]"
+      className="flex h-full min-h-0 flex-col border-t border-border bg-panel"
     >
-      <div className="flex h-9 shrink-0 items-center border-b border-white/[0.1] bg-[#141414] px-2">
+      <div className="flex h-9 shrink-0 items-center border-b border-border bg-panel px-2">
         <Tabs.List className="flex h-full items-center">
           <Tabs.Trigger value="terminal" className={tabClass(activeTab === "terminal")}>
             {runState === "running" ? <LoaderCircle className="size-3 animate-spin" /> : <TerminalSquare className="size-3" />}
@@ -147,7 +147,7 @@ export function OutputPanel({
           <Tabs.Trigger value="problems" className={tabClass(activeTab === "problems")}>
             问题
             {(errorCount > 0 || warningCount > 0) && (
-              <span className="rounded bg-white/[0.07] px-1 py-0.5 text-[9px] text-neutral-400">
+              <span className="rounded bg-hover px-1 py-0.5 text-[9px] text-muted">
                 {errorCount + warningCount}
               </span>
             )}
@@ -157,7 +157,7 @@ export function OutputPanel({
           </Tabs.Trigger>
         </Tabs.List>
         <div className="ml-auto flex items-center gap-0.5">
-          <IconButton label="清空当前输出" onClick={onClear} className="size-7 text-red-400 hover:bg-red-500/10 hover:text-red-300">
+          <IconButton label="清空当前输出" onClick={onClear} className="size-7 text-danger hover:bg-danger-surface hover:text-danger">
             <Eraser className="size-3.5" />
           </IconButton>
           <IconButton label={maximized ? "还原面板" : "最大化面板"} onClick={onToggleMaximize} className="size-7">

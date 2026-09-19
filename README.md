@@ -8,6 +8,7 @@ Mainly.C 是一个面向 C 与 C++ 学习者的轻量级浏览器编辑器。它
 
 - C / C++ / 文本多文件工作区与本地浏览器持久化
 - Monaco Editor C 与 C++ 语法高亮
+- 设置 → 主题色：浅色、深色、跟随系统，以及自制取色板选择任意背景色；文字、侧栏、菜单、代码区和终端自动适配并记住选择
 - 浏览器 Worker 内运行的 clangd 21.1.0 WebAssembly 语言服务
 - 基于真实工作区内容的实时诊断、语义补全、悬停、签名帮助、定义与引用跳转
 - 顶部语言标准选择器：C99、C11、C23；C++11、14、17、20、23、26
@@ -65,6 +66,15 @@ pwsh -NoProfile -File toolchain/clang-22/scripts/build-package.ps1 -WasmerPath "
 ```powershell
 npm run build
 ```
+
+主题配色与界面回归检查：
+
+```powershell
+npm run test:theme
+npm run test:ui
+```
+
+配色按实际 sRGB 相对亮度计算对比度，正文、次要文字、注释和选中状态以 4.5:1 为下限；主背景保留所选颜色，中间亮度的背景会使用更接近黑或白的文字。`test:theme` 覆盖 RGB 网格、所有灰阶及不同色相/饱和度的 6,730 个颜色样本；`test:ui` 同时检查系统主题切换、取色板、草稿与终端保留、刷新后恢复。
 
 ## GitHub Pages
 

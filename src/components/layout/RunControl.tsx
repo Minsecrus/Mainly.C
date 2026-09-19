@@ -21,7 +21,7 @@ interface RunControlProps {
 
 const AUTO_RUN_INTERVALS = [5_000, 10_000, 30_000] as const;
 const tooltipClass =
-  "z-50 rounded-md border border-white/10 bg-neutral-900 px-2 py-1 text-[11px] font-medium text-neutral-200 shadow-xl shadow-black/30 select-none";
+  "z-50 rounded-md border border-border bg-raised px-2 py-1 text-[11px] font-medium text-fg shadow-xl shadow-black/30 select-none";
 
 function parseRunInterval(value: string): AutoRunInterval {
   if (value === "once") return null;
@@ -50,7 +50,7 @@ export function RunControl({
 
   return (
     <>
-      <div className="flex h-8 overflow-hidden rounded-md bg-neutral-100 text-neutral-950 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]">
+      <div className="flex h-8 overflow-hidden rounded-md bg-primary text-on-primary shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]">
         <Tooltip.Root>
           <Tooltip.Trigger asChild>
             <button
@@ -61,8 +61,8 @@ export function RunControl({
               className={cn(
                 "grid h-full w-9 place-items-center border-r outline-none transition disabled:cursor-not-allowed disabled:opacity-55",
                 running
-                  ? "border-red-300/40 bg-red-500 text-white hover:bg-red-400 focus-visible:bg-red-400"
-                  : "border-black/15 hover:bg-white focus-visible:bg-white",
+                  ? "border-on-danger/25 bg-danger-solid text-on-danger hover:bg-danger-hover focus-visible:bg-danger-hover"
+                  : "border-on-primary/20 hover:bg-primary-hover focus-visible:bg-primary-hover",
               )}
             >
               {preparing ? (
@@ -77,7 +77,7 @@ export function RunControl({
           <Tooltip.Portal>
             <Tooltip.Content side="bottom" sideOffset={7} className={tooltipClass}>
               {running ? "终止程序 · Ctrl+C" : "运行当前文件 · Ctrl+Enter"}
-              <Tooltip.Arrow className="fill-neutral-900" />
+              <Tooltip.Arrow className="fill-raised" />
             </Tooltip.Content>
           </Tooltip.Portal>
         </Tooltip.Root>
@@ -88,7 +88,7 @@ export function RunControl({
               <DropdownMenu.Trigger
                 aria-label="选择执行方式"
                 disabled={disabled}
-                className="grid h-full w-7 place-items-center outline-none transition hover:bg-white focus-visible:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+                className="grid h-full w-7 place-items-center outline-none transition hover:bg-primary-hover focus-visible:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-55"
               >
                 <ChevronDown className="size-3.5" strokeWidth={2} />
               </DropdownMenu.Trigger>
@@ -96,7 +96,7 @@ export function RunControl({
             <Tooltip.Portal>
               <Tooltip.Content side="bottom" sideOffset={7} className={tooltipClass}>
                 {runModeLabel}
-                <Tooltip.Arrow className="fill-neutral-900" />
+                <Tooltip.Arrow className="fill-raised" />
               </Tooltip.Content>
             </Tooltip.Portal>
           </Tooltip.Root>
@@ -107,7 +107,7 @@ export function RunControl({
               sideOffset={5}
               className={menuContentClass}
             >
-              <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-neutral-400 uppercase">
+              <DropdownMenu.Label className="px-2 py-1.5 text-[10px] font-semibold tracking-[0.08em] text-muted uppercase">
                 执行方式
               </DropdownMenu.Label>
               <DropdownMenu.RadioGroup
@@ -117,7 +117,7 @@ export function RunControl({
                 <MenuRadioItem value="once">
                   <Play className="size-3.5" />
                   <span className="flex-1">单次运行</span>
-                  <span className="text-[10px] text-neutral-400">不循环</span>
+                  <span className="text-[10px] text-muted">不循环</span>
                 </MenuRadioItem>
                 {AUTO_RUN_INTERVALS.map((milliseconds) => (
                   <MenuRadioItem key={milliseconds} value={String(milliseconds)}>

@@ -81,8 +81,8 @@ export function FileExplorer({
 
   return (
     <>
-      <aside className="flex h-full w-[218px] shrink-0 flex-col border-r border-white/[0.12] bg-[#161616]">
-        <div className="flex h-9 shrink-0 items-center px-3 text-[10px] font-semibold tracking-[0.14em] text-neutral-300 uppercase">
+      <aside className="flex h-full w-[218px] shrink-0 flex-col border-r border-border bg-panel">
+        <div className="flex h-9 shrink-0 items-center px-3 text-[10px] font-semibold tracking-[0.14em] text-secondary uppercase">
           <span className="flex-1">文件</span>
           <IconButton label="新建文件" onClick={() => setCreateKind("c")} className="size-7">
             <Plus className="size-3.5" />
@@ -149,8 +149,8 @@ export function FileExplorer({
               <div
                 key={file.id}
                 className={cn(
-                  "group flex h-7 items-center pr-1 pl-3 text-[12px] text-neutral-300 transition-colors",
-                  active ? "bg-white/[0.12] text-white" : "hover:bg-white/[0.07] hover:text-white",
+                  "group flex h-7 items-center pr-1 pl-3 text-[12px] text-secondary transition-colors",
+                  active ? "bg-selected text-fg" : "hover:bg-hover hover:text-fg",
                 )}
               >
                 <button
@@ -161,12 +161,12 @@ export function FileExplorer({
                   <FileLabel
                     name={file.name}
                     className="flex-1"
-                    markerClassName={cn("text-[10px] font-semibold", active ? "text-white" : "text-neutral-400")}
+                    markerClassName={cn("text-[10px] font-semibold", active ? "text-fg" : "text-muted")}
                   />
                   {locked && (
                     <LockKeyhole
                       aria-label="程序运行期间只读"
-                      className="mr-1 size-3 shrink-0 text-neutral-500"
+                      className="mr-1 size-3 shrink-0 text-muted"
                     />
                   )}
                 </button>
@@ -176,7 +176,7 @@ export function FileExplorer({
                       type="button"
                       aria-label={`${file.name} 操作`}
                       disabled={locked}
-                      className="flex size-6 items-center justify-center rounded text-neutral-400 opacity-0 outline-none group-hover:opacity-100 hover:bg-white/[0.1] hover:text-white focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-25"
+                      className="flex size-6 items-center justify-center rounded text-muted opacity-0 outline-none group-hover:opacity-100 hover:bg-hover hover:text-fg focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-25"
                     >
                       <MoreHorizontal className="size-3.5" />
                     </button>
@@ -242,18 +242,18 @@ export function FileExplorer({
       <AlertDialog.Root open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px]" />
-          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-white/10 bg-neutral-950 p-5 shadow-2xl outline-none">
-            <AlertDialog.Title className="text-sm font-semibold text-neutral-100">删除 {deleteTarget?.name}？</AlertDialog.Title>
-            <AlertDialog.Description className="mt-2 text-xs leading-5 text-neutral-300">
+          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-border bg-raised p-5 shadow-2xl outline-none">
+            <AlertDialog.Title className="text-sm font-semibold text-fg">删除 {deleteTarget?.name}？</AlertDialog.Title>
+            <AlertDialog.Description className="mt-2 text-xs leading-5 text-secondary">
               该文件只存储在浏览器中。删除后无法撤销。
             </AlertDialog.Description>
             <div className="mt-5 flex justify-end gap-2">
               <AlertDialog.Cancel asChild>
-                <button className="h-8 rounded-md px-3 text-xs text-neutral-400 hover:bg-white/[0.06]">取消</button>
+                <button className="h-8 rounded-md px-3 text-xs text-muted hover:bg-hover">取消</button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
                 <button
-                  className="h-8 rounded-md bg-red-500 px-3 text-xs font-semibold text-white hover:bg-red-400"
+                  className="h-8 rounded-md bg-danger-solid px-3 text-xs font-semibold text-on-danger hover:bg-danger-hover"
                   onClick={() => deleteTarget && onDelete(deleteTarget.id)}
                 >
                   删除
@@ -270,20 +270,20 @@ export function FileExplorer({
       >
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px]" />
-          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-white/10 bg-neutral-950 p-5 shadow-2xl outline-none">
-            <AlertDialog.Title className="text-sm font-semibold text-neutral-100">
+          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-border bg-raised p-5 shadow-2xl outline-none">
+            <AlertDialog.Title className="text-sm font-semibold text-fg">
               导入 {pendingImport?.fileName}？
             </AlertDialog.Title>
-            <AlertDialog.Description className="mt-2 text-xs leading-5 text-neutral-300">
+            <AlertDialog.Description className="mt-2 text-xs leading-5 text-secondary">
               当前工作区将被导入文件完整替换，未保存的修改也会丢失。此操作无法撤销。
             </AlertDialog.Description>
             <div className="mt-5 flex justify-end gap-2">
               <AlertDialog.Cancel asChild>
-                <button className="h-8 rounded-md px-3 text-xs text-neutral-400 hover:bg-white/[0.06]">取消</button>
+                <button className="h-8 rounded-md px-3 text-xs text-muted hover:bg-hover">取消</button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
                 <button
-                  className="h-8 rounded-md bg-red-500 px-3 text-xs font-semibold text-white hover:bg-red-400"
+                  className="h-8 rounded-md bg-danger-solid px-3 text-xs font-semibold text-on-danger hover:bg-danger-hover"
                   onClick={() => pendingImport && onImportWorkspace(pendingImport.workspace)}
                 >
                   导入并替换
@@ -297,16 +297,16 @@ export function FileExplorer({
       <AlertDialog.Root open={importError !== undefined} onOpenChange={(open) => !open && setImportError(undefined)}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px]" />
-          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-white/10 bg-neutral-950 p-5 shadow-2xl outline-none">
-            <AlertDialog.Title className="text-sm font-semibold text-neutral-100">
+          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-border bg-raised p-5 shadow-2xl outline-none">
+            <AlertDialog.Title className="text-sm font-semibold text-fg">
               无法导入工作区
             </AlertDialog.Title>
-            <AlertDialog.Description className="mt-2 text-xs leading-5 text-neutral-300">
+            <AlertDialog.Description className="mt-2 text-xs leading-5 text-secondary">
               {importError}
             </AlertDialog.Description>
             <div className="mt-5 flex justify-end">
               <AlertDialog.Action asChild>
-                <button className="h-8 rounded-md bg-neutral-100 px-3 text-xs font-semibold text-neutral-950 hover:bg-white">
+                <button className="h-8 rounded-md bg-primary px-3 text-xs font-semibold text-on-primary hover:bg-primary-hover">
                   关闭
                 </button>
               </AlertDialog.Action>
@@ -318,20 +318,20 @@ export function FileExplorer({
       <AlertDialog.Root open={clearNonCodeOpen} onOpenChange={setClearNonCodeOpen}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px]" />
-          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-white/10 bg-neutral-950 p-5 shadow-2xl outline-none">
-            <AlertDialog.Title className="text-sm font-semibold text-neutral-100">
+          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-border bg-raised p-5 shadow-2xl outline-none">
+            <AlertDialog.Title className="text-sm font-semibold text-fg">
               清除所有非代码文件？
             </AlertDialog.Title>
-            <AlertDialog.Description className="mt-2 text-xs leading-5 text-neutral-300">
+            <AlertDialog.Description className="mt-2 text-xs leading-5 text-secondary">
               所有 .txt 文件将从浏览器工作区中删除，C 与 C++ 源文件会保留。此操作无法撤销。
             </AlertDialog.Description>
             <div className="mt-5 flex justify-end gap-2">
               <AlertDialog.Cancel asChild>
-                <button className="h-8 rounded-md px-3 text-xs text-neutral-400 hover:bg-white/[0.06]">取消</button>
+                <button className="h-8 rounded-md px-3 text-xs text-muted hover:bg-hover">取消</button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
                 <button
-                  className="h-8 rounded-md bg-red-500 px-3 text-xs font-semibold text-white hover:bg-red-400"
+                  className="h-8 rounded-md bg-danger-solid px-3 text-xs font-semibold text-on-danger hover:bg-danger-hover"
                   onClick={onClearNonCodeFiles}
                 >
                   清除
@@ -345,18 +345,18 @@ export function FileExplorer({
       <AlertDialog.Root open={resetOpen} onOpenChange={setResetOpen}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/65 backdrop-blur-[2px]" />
-          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-white/10 bg-neutral-950 p-5 shadow-2xl outline-none">
-            <AlertDialog.Title className="text-sm font-semibold text-neutral-100">恢复初始工作区？</AlertDialog.Title>
-            <AlertDialog.Description className="mt-2 text-xs leading-5 text-neutral-300">
+          <AlertDialog.Content className="fixed top-[30%] left-1/2 z-50 w-[min(390px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-border bg-raised p-5 shadow-2xl outline-none">
+            <AlertDialog.Title className="text-sm font-semibold text-fg">恢复初始工作区？</AlertDialog.Title>
+            <AlertDialog.Description className="mt-2 text-xs leading-5 text-secondary">
               现有的所有本地文件都会被初始 main.c 替换。
             </AlertDialog.Description>
             <div className="mt-5 flex justify-end gap-2">
               <AlertDialog.Cancel asChild>
-                <button className="h-8 rounded-md px-3 text-xs text-neutral-400 hover:bg-white/[0.06]">取消</button>
+                <button className="h-8 rounded-md px-3 text-xs text-muted hover:bg-hover">取消</button>
               </AlertDialog.Cancel>
               <AlertDialog.Action asChild>
                 <button
-                  className="h-8 rounded-md bg-red-500 px-3 text-xs font-semibold text-white hover:bg-red-400"
+                  className="h-8 rounded-md bg-danger-solid px-3 text-xs font-semibold text-on-danger hover:bg-danger-hover"
                   onClick={onReset}
                 >
                   恢复

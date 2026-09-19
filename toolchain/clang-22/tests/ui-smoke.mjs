@@ -5,6 +5,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
+import { checkTheme } from "./theme-ui.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, "../../..");
@@ -41,6 +42,49 @@ function contentType(filePath) {
   if (filePath.endsWith(".wasm")) return "application/wasm";
   if (filePath.endsWith(".ttf")) return "font/ttf";
   return "application/octet-stream";
+}
+
+async function checkMouseInput(page) {
+  const lines = page.locator(".monaco-editor .view-lines");
+  const readCode = () => lines.evaluate((element) => {
+    const copy = element.cloneNode(true);
+    copy.querySelectorAll(".mainly-error-lens-message, .mainly-warning-lens-message").forEach((message) => message.remove());
+    return [...copy.querySelectorAll(".view-line")].map((line) => line.textContent.replaceAll("\u00a0", " ")).join("\n");
+  });
+  for (const [index, line] of [1, 4, 7].entries()) {
+    await lines.locator(".view-line").nth(line).click({ position: { x: 2, y: 10 } });
+    if (index > 0) {
+      // Reproduce the lost browser selection observed after a native mouse click.
+      // The editor still has focus, but textarea input stops emitting input events.
+      await page.evaluate(() => document.getSelection()?.removeAllRanges());
+    }
+    const previousCount = (await readCode()).split("q").length - 1;
+    await page.keyboard.press("q");
+    await page.waitForFunction(
+      (expected) => {
+        const copy = document.querySelector(".monaco-editor .view-lines").cloneNode(true);
+        copy.querySelectorAll(".mainly-error-lens-message, .mainly-warning-lens-message").forEach((message) => message.remove());
+        return copy.textContent.split("q").length - 1 === expected;
+      },
+      previousCount + 1,
+      { timeout: 2_000 },
+    ).catch(async (error) => {
+      console.error("[ui-smoke:mouse-input]", index, await page.evaluate(() => ({
+        text: document.querySelector(".monaco-editor .view-lines")?.textContent,
+        focus: document.activeElement?.className,
+        native: Boolean(document.querySelector(".monaco-editor .native-edit-context")),
+      })));
+      throw error;
+    });
+    const lineCount = await lines.locator(".view-line").count();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      (previous) => document.querySelectorAll(".monaco-editor .view-line").length === previous + 1,
+      lineCount,
+      { timeout: 2_000 },
+    );
+  }
+  console.log("[ui-smoke] mouse repositioning, lost browser selection, direct typing and Enter passed");
 }
 
 async function run() {
@@ -165,6 +209,11 @@ async function run() {
     }
     await page.locator("[data-terminal-notice]").waitFor({ state: "visible", timeout: 5_000 });
     console.log("[ui-smoke] run disabled while the terminal shows initialization progress");
+
+    if (process.env.UI_INPUT_ONLY === "1") {
+      await checkMouseInput(page);
+      return;
+    }
 
     await page.locator('.monaco-editor[data-clangd-status="ready"]').waitFor({
       state: "attached",
@@ -333,6 +382,8 @@ async function run() {
       throw new Error(`Terminal did not echo and edit canonical input: ${terminalText}`);
     }
 
+    await checkTheme(page, path.dirname(screenshotPath));
+
     console.log("[ui-smoke] create a C++ file, expose six standards, and run C++26");
     await page.getByRole("button", { name: "更多文件操作" }).click();
     await page.getByRole("menuitem", { name: "新建 C++ 文件" }).click();
@@ -348,7 +399,7 @@ async function run() {
       await page.getByRole("menuitemradio", { name: new RegExp(`^${standard.replaceAll("+", "\\+")}`) }).waitFor({ state: "visible" });
     }
     await page.getByRole("menuitemradio", { name: /C\+\+26/ }).click();
-    const cppEditorInput = page.locator(".monaco-editor textarea.inputarea").first();
+    const cppEditorInput = page.locator(".monaco-editor").getByRole("textbox", { name: /Editor content/ }).first();
     await cppEditorInput.focus();
     await cppEditorInput.press("Control+A");
     await cppEditorInput.press("Backspace");
@@ -424,11 +475,14 @@ async function run() {
     await page.getByRole("button", { name: "终止当前程序" }).waitFor({ state: "visible" });
     await createdFileButton.click();
     await page.locator("[data-runtime-text-lock]").waitFor({ state: "visible", timeout: 2_000 });
-    await page.waitForFunction(
-      () => document.querySelector(".monaco-editor textarea.inputarea")?.hasAttribute("readonly"),
-      undefined,
-      { timeout: 2_000 },
-    );
+    const lockedContent = await page.locator(".monaco-editor .view-lines").textContent();
+    await cppEditorInput.focus();
+    await page.keyboard.type("blocked");
+    await page.keyboard.press("Backspace");
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    if (await page.locator(".monaco-editor .view-lines").textContent() !== lockedContent) {
+      throw new Error("Typing modified a runtime-locked text file");
+    }
     if (!(await page.getByRole("button", { name: "created.txt 操作" }).isDisabled())) {
       throw new Error("Runtime-created text file actions were not locked");
     }
@@ -517,11 +571,6 @@ async function run() {
       timeout: 10_000,
     });
     await page.locator("[data-runtime-text-lock]").waitFor({ state: "hidden", timeout: 2_000 });
-    await page.waitForFunction(
-      () => !document.querySelector(".monaco-editor textarea.inputarea")?.hasAttribute("readonly"),
-      undefined,
-      { timeout: 2_000 },
-    );
 
     console.log("[ui-smoke] capture a final VFS snapshot before Ctrl+C terminates the worker");
     await page.locator("button").filter({ hasText: "untitled.cpp" }).first().click();
@@ -594,11 +643,12 @@ async function run() {
       { timeout: 5_000 },
     );
 
-    const editorInput = page.locator(".monaco-editor textarea.inputarea").first();
+    const editorInput = page.locator(".monaco-editor").getByRole("textbox", { name: /Editor content/ }).first();
     await editorInput.focus();
     await editorInput.press("Control+A");
     await editorInput.press("Backspace");
-    await editorInput.pressSequentially("int main(void) { return 0 }", { delay: 1 });
+    // Insert the diagnostic fixture as a unit; character typing is covered above.
+    await page.keyboard.insertText("int main(void) { return 0 }");
     await page.waitForFunction(
       () => {
         const text = document.querySelector(".monaco-editor .view-lines")?.textContent ?? "";
@@ -708,6 +758,10 @@ async function run() {
       throw new Error(`clangd failed during UI smoke: ${clangdFailures.join("\n")}`);
     }
     console.log("[ui-smoke] persistent compiler and clangd caches reused after reload");
+    if (await page.evaluate(() => document.documentElement.style.getPropertyValue("--theme-canvas")) !== "#e8f0ea") {
+      throw new Error("The custom background was not restored after reload");
+    }
+    await checkMouseInput(page);
 
     console.log(
       JSON.stringify(

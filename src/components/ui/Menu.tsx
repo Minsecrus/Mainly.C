@@ -5,7 +5,7 @@ import { DropdownMenu } from "radix-ui";
 import { cn } from "../../lib/cn.js";
 
 export const menuContentClass =
-  "z-50 min-w-52 overflow-hidden rounded-lg border border-white/15 bg-neutral-900/98 p-1 text-[12px] text-neutral-100 shadow-2xl shadow-black/50 backdrop-blur-xl data-[state=open]:animate-[menu-in_120ms_ease-out]";
+  "z-50 min-w-52 overflow-hidden rounded-lg border border-border bg-raised p-1 text-[12px] text-fg shadow-2xl shadow-black/50 backdrop-blur-xl data-[state=open]:animate-[menu-in_120ms_ease-out]";
 
 export function MenuItem({
   className,
@@ -26,8 +26,8 @@ export function MenuItem({
       className={cn(
         "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 outline-none select-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-35",
         destructive
-          ? "text-red-400 data-[highlighted]:bg-red-500/10 data-[highlighted]:text-red-300"
-          : "data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-white",
+          ? "text-danger data-[highlighted]:bg-danger-surface data-[highlighted]:text-danger"
+          : "data-[highlighted]:bg-hover data-[highlighted]:text-fg",
         inset && "pl-8",
         className,
       )}
@@ -35,7 +35,7 @@ export function MenuItem({
     >
       {icon && <span className="flex size-4 items-center justify-center">{icon}</span>}
       <span className="min-w-0 flex-1">{children}</span>
-      {shortcut && <span className="ml-4 text-[10px] tracking-wide text-neutral-400">{shortcut}</span>}
+      {shortcut && <span className="ml-4 text-[10px] tracking-wide text-muted">{shortcut}</span>}
     </DropdownMenu.Item>
   );
 }
@@ -48,7 +48,7 @@ export function MenuCheckboxItem({
   return (
     <DropdownMenu.CheckboxItem
       className={cn(
-        "relative flex h-8 cursor-pointer items-center rounded-md pr-2 pl-8 outline-none select-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-white data-[disabled]:opacity-35",
+        "relative flex h-8 cursor-pointer items-center rounded-md pr-2 pl-8 outline-none select-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-hover data-[highlighted]:text-fg data-[disabled]:opacity-35",
         className,
       )}
       {...props}
@@ -71,7 +71,7 @@ export function MenuRadioItem({
   return (
     <DropdownMenu.RadioItem
       className={cn(
-        "relative flex h-8 cursor-pointer items-center gap-2 rounded-md pr-2 pl-8 outline-none select-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-white data-[disabled]:opacity-35",
+        "relative flex h-8 cursor-pointer items-center gap-2 rounded-md pr-2 pl-8 outline-none select-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-hover data-[highlighted]:text-fg data-[disabled]:opacity-35",
         className,
       )}
       {...props}
@@ -94,17 +94,17 @@ export function MenuSubTrigger({
   return (
     <DropdownMenu.SubTrigger
       className={cn(
-        "flex h-8 cursor-pointer items-center rounded-md px-2 outline-none select-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-white/[0.08] data-[state=open]:bg-white/[0.08] data-[disabled]:opacity-35",
+        "flex h-8 cursor-pointer items-center rounded-md px-2 outline-none select-none data-[disabled]:cursor-not-allowed data-[highlighted]:bg-hover data-[state=open]:bg-hover data-[disabled]:opacity-35",
         className,
       )}
       {...props}
     >
       {children}
-      <ChevronRight className="ml-auto size-3.5 text-neutral-400" />
+      <ChevronRight className="ml-auto size-3.5 text-muted" />
     </DropdownMenu.SubTrigger>
   );
 }
 
 export function MenuSeparator() {
-  return <DropdownMenu.Separator className="my-1 h-px bg-white/[0.07]" />;
+  return <DropdownMenu.Separator className="my-1 h-px bg-border" />;
 }
