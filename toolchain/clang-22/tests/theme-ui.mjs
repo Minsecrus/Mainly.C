@@ -112,7 +112,8 @@ export async function checkTheme(page, screenshotDirectory) {
   assert.equal(await page.locator(".xterm-rows").textContent(), terminalText, "Changing colors cleared terminal output");
   assert.ok((await page.locator(".monaco-editor .view-lines").textContent()).replaceAll("\u00a0", " ").includes("unsaved theme check"));
   assert.equal(await page.evaluate(() => localStorage.getItem("mainly.c.workspace.v1")), storedWorkspace, "Changing colors saved the unsaved draft");
-  await dialog.getByRole("button", { name: "关闭主题色设置", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
   await editor.focus();
   await editor.press("Control+Z");
   await page.waitForFunction(() => !document.querySelector(".monaco-editor .view-lines").textContent.replaceAll("\u00a0", " ").includes("unsaved theme check"));

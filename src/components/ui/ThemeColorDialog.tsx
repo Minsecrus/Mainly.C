@@ -1,11 +1,10 @@
 import { useLayoutEffect, useId, useRef, useState, type PointerEvent } from "react";
-import { Check, Monitor, Moon, Sun, X } from "lucide-react";
+import { Monitor, Moon, Sun } from "lucide-react";
 import { Dialog } from "radix-ui";
 
 import { hexToHsv, hsvToHex, type HsvColor } from "../../features/theme/colorPicker.js";
 import { useTheme } from "../../features/theme/ThemeProvider.js";
 import { cn } from "../../lib/cn.js";
-import { IconButton } from "./IconButton.js";
 
 const MODES = [
   { mode: "light", name: "浅色", icon: Sun },
@@ -48,11 +47,8 @@ export function ThemeColorDialog({ open, onOpenChange }: {
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]" />
-        <Dialog.Content aria-describedby={undefined} className="fixed top-1/2 left-1/2 z-50 w-[min(490px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-raised p-5 pt-10 text-fg shadow-2xl outline-none">
+        <Dialog.Content aria-describedby={undefined} className="fixed top-1/2 left-1/2 z-50 w-[min(490px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-raised p-5 text-fg shadow-2xl outline-none">
           <Dialog.Title className="sr-only">主题色</Dialog.Title>
-          <Dialog.Close asChild>
-            <IconButton label="关闭主题色设置" className="absolute top-2 right-2"><X className="size-4" /></IconButton>
-          </Dialog.Close>
 
           <div className="flex gap-4">
             <div className="flex w-28 shrink-0 flex-col gap-1.5 border-r border-border pr-3" role="group" aria-label="主题模式">
@@ -74,10 +70,6 @@ export function ThemeColorDialog({ open, onOpenChange }: {
             </div>
 
             <div className="min-w-0 flex-1">
-              <div className="mb-2 flex items-center justify-between text-[11px]">
-                <span className="text-secondary">自定义背景</span>
-                {mode === "custom" && <span className="flex items-center gap-1 text-muted"><Check className="size-3" />已应用</span>}
-              </div>
               <div
                 role="slider"
                 aria-label="颜色明度与饱和度"
