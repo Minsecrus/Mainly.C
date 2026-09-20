@@ -3,7 +3,6 @@ import { Check, Monitor, Moon, Sun, X } from "lucide-react";
 import { Dialog } from "radix-ui";
 
 import { hexToHsv, hsvToHex, type HsvColor } from "../../features/theme/colorPicker.js";
-import { normalizeColor } from "../../features/theme/palette.js";
 import { useTheme } from "../../features/theme/ThemeProvider.js";
 import { cn } from "../../lib/cn.js";
 import { IconButton } from "./IconButton.js";
@@ -22,14 +21,10 @@ export function ThemeColorDialog({ open, onOpenChange }: {
   const { palette, mode, setMode, setBackground } = useTheme();
   const background = palette.colors.canvas;
   const [hsv, setHsv] = useState(() => hexToHsv(background));
-  const [hex, setHex] = useState(background);
-  const [error, setError] = useState(false);
   const lastPicked = useRef<string | undefined>(undefined);
   const id = useId();
 
   useLayoutEffect(() => {
-    setHex(background);
-    setError(false);
     // Preserve hue and saturation at black/white and around the hue slider's end.
     if (background !== lastPicked.current) {
       const next = hexToHsv(background);
@@ -41,8 +36,6 @@ export function ThemeColorDialog({ open, onOpenChange }: {
     const color = hsvToHex(next);
     lastPicked.current = color;
     setHsv(next);
-    setHex(color);
-    setError(false);
     setBackground(color);
   }
 
@@ -51,33 +44,17 @@ export function ThemeColorDialog({ open, onOpenChange }: {
     pick({ ...hsv, s: clamp((event.clientX - bounds.left) / bounds.width), v: 1 - clamp((event.clientY - bounds.top) / bounds.height) });
   }
 
-  function commitHex() {
-    const color = normalizeColor(hex);
-    setError(!color);
-    if (color) {
-      lastPicked.current = undefined;
-      setHsv(hexToHsv(color));
-      setHex(color);
-      if (color !== background) setBackground(color);
-    }
-  }
-
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-[min(490px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-raised p-5 text-fg shadow-2xl outline-none">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <Dialog.Title className="text-sm font-semibold">主题色</Dialog.Title>
-              <Dialog.Description className="mt-2 text-xs leading-5 text-muted">选择背景色，文字和界面颜色自动适配。</Dialog.Description>
-            </div>
-            <Dialog.Close asChild>
-              <IconButton label="关闭主题色设置" className="-mt-1 -mr-1"><X className="size-4" /></IconButton>
-            </Dialog.Close>
-          </div>
+        <Dialog.Content aria-describedby={undefined} className="fixed top-1/2 left-1/2 z-50 w-[min(490px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-raised p-5 pt-10 text-fg shadow-2xl outline-none">
+          <Dialog.Title className="sr-only">主题色</Dialog.Title>
+          <Dialog.Close asChild>
+            <IconButton label="关闭主题色设置" className="absolute top-2 right-2"><X className="size-4" /></IconButton>
+          </Dialog.Close>
 
-          <div className="mt-5 flex gap-4">
+          <div className="flex gap-4">
             <div className="flex w-28 shrink-0 flex-col gap-1.5 border-r border-border pr-3" role="group" aria-label="主题模式">
               {MODES.map(({ mode: value, name, icon: Icon }) => (
                 <button
@@ -153,43 +130,9 @@ export function ThemeColorDialog({ open, onOpenChange }: {
                 onChange={(event) => pick({ ...hsv, h: Number(event.target.value) })}
                 className="theme-hue-slider mt-4 block h-3 w-full cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-raised"
               />
-              <div className="mt-4 flex items-center gap-2 rounded-md border border-border bg-inset px-2.5">
-                <span className="size-4 shrink-0 rounded border border-border" style={{ background }} />
-                <label htmlFor={`${id}-hex`} className="text-[10px] text-muted">HEX</label>
-                <input
-                  id={`${id}-hex`}
-                  type="text"
-                  aria-label="十六进制颜色"
-                  aria-invalid={error}
-                  aria-describedby={error ? `${id}-error` : undefined}
-                  value={hex}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setHex(value);
-                    setError(false);
-                    if (/^#?[\da-f]{6}$/i.test(value)) {
-                      lastPicked.current = undefined;
-                      setBackground(value);
-                    }
-                  }}
-                  onBlur={commitHex}
-                  onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitHex(); } }}
-                  maxLength={7}
-                  spellCheck={false}
-                  autoComplete="off"
-                  className="h-8 min-w-0 flex-1 bg-transparent font-mono text-xs text-fg outline-none focus-visible:underline aria-invalid:text-danger"
-                />
-              </div>
-              {error && <p id={`${id}-error`} role="alert" className="mt-2 text-[10px] text-danger">请输入有效颜色，例如 #e8f0ea 或 #fff。</p>}
             </div>
           </div>
 
-          <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-            <span className="text-[10px] text-muted">即时生效，自动记住你的选择</span>
-            <Dialog.Close asChild>
-              <button type="button" className="h-8 rounded-md bg-primary px-4 text-xs font-semibold text-on-primary outline-none hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-raised">完成</button>
-            </Dialog.Close>
-          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

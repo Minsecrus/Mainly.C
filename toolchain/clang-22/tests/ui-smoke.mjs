@@ -382,7 +382,7 @@ async function run() {
       throw new Error(`Terminal did not echo and edit canonical input: ${terminalText}`);
     }
 
-    await checkTheme(page, path.dirname(screenshotPath));
+    const themeBackground = await checkTheme(page, path.dirname(screenshotPath));
 
     console.log("[ui-smoke] create a C++ file, expose six standards, and run C++26");
     await page.getByRole("button", { name: "更多文件操作" }).click();
@@ -758,7 +758,7 @@ async function run() {
       throw new Error(`clangd failed during UI smoke: ${clangdFailures.join("\n")}`);
     }
     console.log("[ui-smoke] persistent compiler and clangd caches reused after reload");
-    if (await page.evaluate(() => document.documentElement.style.getPropertyValue("--theme-canvas")) !== "#e8f0ea") {
+    if (await page.evaluate(() => document.documentElement.style.getPropertyValue("--theme-canvas")) !== themeBackground) {
       throw new Error("The custom background was not restored after reload");
     }
     await checkMouseInput(page);

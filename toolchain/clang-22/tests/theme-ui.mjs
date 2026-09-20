@@ -15,7 +15,7 @@ export async function checkTheme(page, screenshotDirectory) {
   await page.getByRole("menuitem", { name: "主题色", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "主题色", exact: true });
   await dialog.waitFor({ state: "visible" });
-  const hex = dialog.getByRole("textbox", { name: "十六进制颜色" });
+  const currentBackground = () => page.evaluate(() => document.documentElement.style.getPropertyValue("--theme-canvas"));
 
   const expectBackground = async (color) => {
     await page.waitForFunction((expected) => {
@@ -53,7 +53,7 @@ export async function checkTheme(page, screenshotDirectory) {
       }
       return failures;
     });
-    assert.deepEqual(failures, [], `Rendered text contrast: ${await hex.inputValue()}`);
+    assert.deepEqual(failures, [], `Rendered text contrast: ${await currentBackground()}`);
   };
 
   await dialog.getByRole("button", { name: "浅色", exact: true }).click();
@@ -77,11 +77,11 @@ export async function checkTheme(page, screenshotDirectory) {
   const plane = dialog.getByRole("slider", { name: "颜色明度与饱和度" });
   const bounds = await plane.boundingBox();
   await plane.click({ position: { x: bounds.width / 2, y: bounds.height / 3 } });
-  const beforeHue = await hex.inputValue();
+  const beforeHue = await currentBackground();
   const hue = dialog.getByRole("slider", { name: "色相", exact: true });
   await hue.focus();
   await hue.press("ArrowRight");
-  assert.notEqual(await hex.inputValue(), beforeHue, "The hue slider did not change the selected color");
+  await page.waitForFunction((previous) => document.documentElement.style.getPropertyValue("--theme-canvas") !== previous, beforeHue, { timeout: 2_000 });
   await plane.focus();
   await plane.press("ArrowDown");
   await plane.press("Shift+ArrowRight");
@@ -91,20 +91,20 @@ export async function checkTheme(page, screenshotDirectory) {
   await page.mouse.up();
   await expectBackground("#000000");
 
-  for (const color of ["#757575", "#0077dd", "#ff0000", "#00ff00", "#e8f0ea"]) {
-    await hex.fill(color);
-    await hex.press("Enter");
-    await expectBackground(color);
+  await hue.press("Home");
+  for (const position of [
+    { x: 1, y: bounds.height / 2 },
+    { x: bounds.width - 1, y: 1 },
+    { x: bounds.width / 3, y: bounds.height / 4 },
+  ]) {
+    await plane.click({ position });
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    await expectBackground(await currentBackground());
     await checkRenderedContrast();
   }
+  const customBackground = await currentBackground();
   await page.emulateMedia({ colorScheme: "light" });
-  await expectBackground("#e8f0ea");
-  await hex.fill("#oops");
-  await hex.press("Enter");
-  assert.equal(await hex.getAttribute("aria-invalid"), "true");
-  await expectBackground("#e8f0ea");
-  await hex.fill("#e8f0ea");
-  await hex.press("Enter");
+  await expectBackground(customBackground);
   await page.screenshot({ path: path.join(screenshotDirectory, "theme-custom.png") });
 
   assert.ok(await editorNode.evaluate((element) => element.isConnected), "Changing colors recreated the editor");
@@ -112,12 +112,13 @@ export async function checkTheme(page, screenshotDirectory) {
   assert.equal(await page.locator(".xterm-rows").textContent(), terminalText, "Changing colors cleared terminal output");
   assert.ok((await page.locator(".monaco-editor .view-lines").textContent()).replaceAll("\u00a0", " ").includes("unsaved theme check"));
   assert.equal(await page.evaluate(() => localStorage.getItem("mainly.c.workspace.v1")), storedWorkspace, "Changing colors saved the unsaved draft");
-  await dialog.getByRole("button", { name: "完成", exact: true }).click();
+  await dialog.getByRole("button", { name: "关闭主题色设置", exact: true }).click();
   await editor.focus();
   await editor.press("Control+Z");
   await page.waitForFunction(() => !document.querySelector(".monaco-editor .view-lines").textContent.replaceAll("\u00a0", " ").includes("unsaved theme check"));
-  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("mainly.c.theme.v1"))), { mode: "custom", color: "#e8f0ea" });
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem("mainly.c.theme.v1"))), { mode: "custom", color: customBackground });
   await editorNode.dispose();
   await terminalNode.dispose();
-  console.log("[ui-smoke] theme modes, live system changes, pointer/keyboard picker, validation, unsaved draft and terminal preservation passed");
+  console.log("[ui-smoke] theme modes, live system changes, pointer/keyboard picker, unsaved draft and terminal preservation passed");
+  return customBackground;
 }
